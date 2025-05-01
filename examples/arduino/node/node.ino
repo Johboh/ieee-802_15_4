@@ -6,7 +6,7 @@ struct __attribute__((packed)) ApplicationMessage {
   double temperature;
 };
 
-Ieee802154 _ieee802154({});
+Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191});
 
 void setup() {
   _ieee802154.initialize();

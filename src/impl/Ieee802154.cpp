@@ -79,10 +79,9 @@ esp_err_t IRAM_ATTR Ieee802154::ieee802154_enh_ack_generator_cb(uint8_t *frame, 
   return ESP_OK;
 }
 
-Ieee802154::Ieee802154(Configuration configuration, OnApplicationMessage on_application_message,
-                       OnDataRequest on_data_request)
-    : _configuration(configuration), _sequence_number(configuration.initial_sequence_number),
-      _on_data_request(on_data_request), _on_application_message(on_application_message) {}
+Ieee802154::Ieee802154(Configuration configuration, OnMessage on_message, OnDataRequest on_data_request)
+    : _on_message(on_message), _configuration(configuration), _sequence_number(configuration.initial_sequence_number),
+      _on_data_request(on_data_request) {}
 
 void Ieee802154::cbTask(void *pvParameters) {
   Ieee802154 *_this = (Ieee802154 *)pvParameters;
@@ -114,7 +113,7 @@ void Ieee802154::cbTask(void *pvParameters) {
           auto last_processed = _this->_last_processed_sequence_number.find(source_address);
           if (last_processed == _this->_last_processed_sequence_number.end() ||
               last_processed->second != received_message.sequence_number) {
-            if (_this->_on_application_message) {
+            if (_this->_on_message) {
               Ieee802154::Message message = {
                   .ieee802154 = *_this,
                   .source_address = source_address,
@@ -122,7 +121,7 @@ void Ieee802154::cbTask(void *pvParameters) {
                   .payload_size = std::min(received_message.data_length, (uint8_t)sizeof(message.payload)),
               };
               memcpy(message.payload, received_message.data, message.payload_size);
-              _this->_on_application_message(message);
+              _this->_on_message(message);
             }
           } else {
             ESP_LOGW(Ieee802154Log::TAG, "Already processed this sequence number %d", received_message.sequence_number);
@@ -209,7 +208,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
   ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(_configuration.handle_broadcasts));
   ESP_ERROR_CHECK(esp_ieee802154_set_coordinator(false));
 
-  if (_on_application_message) {
+  if (_on_message) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
   }
@@ -377,15 +376,15 @@ void Ieee802154::clearPending(uint64_t mac) {
   esp_ieee802154_clear_pending_addr(mac_array, false);
 }
 
-void Ieee802154::receive(OnApplicationMessage on_application_message) {
-  if (on_application_message && !_on_application_message) {
+void Ieee802154::receive(OnMessage on_message) {
+  if (on_message && !_on_message) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
-  } else if (!on_application_message && _on_application_message) {
+  } else if (!on_message && _on_message) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(false));
     ESP_ERROR_CHECK(esp_ieee802154_sleep());
   }
-  _on_application_message = on_application_message;
+  _on_message = on_message;
 }
 
 void Ieee802154::changeChannel(uint8_t channel) {

@@ -12,7 +12,7 @@ struct __attribute__((packed)) ApplicationMessage {
   double temperature;
 };
 
-Ieee802154 _ieee802154({.handle_broadcasts = false}, [](Ieee802154::Message message) {
+Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191, .handle_broadcasts = false}, [](Ieee802154::Message message) {
   ESP_LOGI(LOG_TAG, "Got Message");
   ESP_LOGI(LOG_TAG, " -- source MAC: 0x%llx", message.source_address);
   ESP_LOGI(LOG_TAG, " -- destination MAC: 0x%llx", message.destination_address);

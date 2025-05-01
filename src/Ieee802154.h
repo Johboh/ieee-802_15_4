@@ -9,9 +9,6 @@
 #include <optional>
 #include <string>
 
-#define CHANNEL 15
-#define PAN_ID 0x9191
-
 namespace Ieee802154Log {
 const char TAG[] = "802.15.4";
 } // namespace Ieee802154Log
@@ -45,7 +42,7 @@ public:
     uint8_t payload_size = 0;
   };
 
-  typedef std::function<void(Ieee802154::Message message)> OnApplicationMessage;
+  typedef std::function<void(Ieee802154::Message message)> OnMessage;
 
   struct DataRequest {
     Ieee802154 &ieee802154;
@@ -55,9 +52,15 @@ public:
   typedef std::function<void(Ieee802154::DataRequest request)> OnDataRequest;
 
   struct Configuration {
-    // 11-26
-    uint8_t channel = CHANNEL;
-    uint16_t pan_id = PAN_ID;
+    /**
+     * 802.15.4 channel to use. Value between 11 and 16, and its recommended to pick a channel that is in between the
+     * common WiFi channels. 15 is a good number.
+     */
+    uint8_t channel;
+    /**
+     * Private Area Network Identifier. Should be same between host and node.
+     */
+    uint16_t pan_id;
     /**
      * If the device is going to deep sleep between transmissions, keep the sequence number in an RTC variable and set
      * it in the Configuration upon waking up.
@@ -92,13 +95,12 @@ public:
    * @brief Create a new Ieee802154 object.
    *
    * @param configuration see Configuration.
-   * @param on_application_message if set, radio will go into receive mode and allow for reciving messages targeted to
+   * @param on_message if set, radio will go into receive mode and allow for reciving messages targeted to
    * this device, or if promiscuous_mode is set to true in the Configuration, also broadcast messages. Can also be set
    * later using receive() call.
    * @param on_data_request callback for when a data request was received. See set/clearPending().
    */
-  Ieee802154(Configuration configuration, OnApplicationMessage on_application_message = {},
-             OnDataRequest on_data_request = {});
+  Ieee802154(Configuration configuration, OnMessage on_message = {}, OnDataRequest on_data_request = {});
 
 public:
   /**
@@ -162,7 +164,7 @@ public:
    * Start receiving and set callback for received messages. If callback already set in constructor, no need to call
    * again. Call with empty callback to clear/stop reciving frames.
    */
-  void receive(OnApplicationMessage on_application_message);
+  void receive(OnMessage on_message);
 
   /**
    * @brief Let transmitter know that there is pending data when transmitter sends a data request.
@@ -222,11 +224,11 @@ private: // static callbacks
                                                    uint8_t *enhack_frame);
 
 private:
+  OnMessage _on_message;
   std::mutex _send_mutex;
   bool _initialized = false;
   Configuration _configuration;
   uint8_t _sequence_number = 0;
   OnDataRequest _on_data_request;
-  OnApplicationMessage _on_application_message;
   std::map<uint64_t, uint8_t> _last_processed_sequence_number;
 };
