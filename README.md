@@ -33,4 +33,6 @@ Search for `ieee-802_15_4` by `johboh` in the library manager. See note about ve
 - [ESP-IDF framework node](examples/espidf/node/main/main.cpp)
 
 ### Compatibility
-- ESP32 only
+- ESP-IDF using ESP32
+- Arduino IDE using ESP32
+- PlatformIO using ESP-IDF (Arduino not supported as the PlatformIO Arduino verion is too old (4.4.7, end of life))
