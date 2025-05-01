@@ -17,7 +17,7 @@
   "build": {
       "libLDFMode": "deep"
   },
-  "frameworks": ["espidf", "arduino"],
+  "frameworks": ["espidf"],
   "platforms": ["espressif32"],
   "examples": [
     {
