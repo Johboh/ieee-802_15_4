@@ -1,4 +1,4 @@
-name: ESP-IDF CI Shared
+name: ESP-IDF CI
 
 on:
   workflow_call:
