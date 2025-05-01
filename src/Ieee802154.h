@@ -116,6 +116,13 @@ public:
   uint8_t nextSequenceNumber() { return _sequence_number; }
 
   /**
+   * @brief Change the channel.
+   *
+   * @param channel channel number between 11 and 26.
+   */
+  void changeChannel(uint8_t channel);
+
+  /**
    * @brief Get the device mac address for this device. This would be the source address in the 802.15.4 frame (or the
    * destination address for a sender).
    */

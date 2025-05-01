@@ -189,7 +189,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
 
   ESP_ERROR_CHECK(esp_ieee802154_enable());
 
-  ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
+  changeChannel(_configuration.channel);
 
   ESP_ERROR_CHECK(esp_ieee802154_set_panid(_configuration.pan_id));
 
@@ -386,6 +386,11 @@ void Ieee802154::receive(OnApplicationMessage on_application_message) {
     ESP_ERROR_CHECK(esp_ieee802154_sleep());
   }
   _on_application_message = on_application_message;
+}
+
+void Ieee802154::changeChannel(uint8_t channel) {
+  _configuration.channel = channel;
+  ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
 }
 
 uint64_t Ieee802154::deviceMacAddress() {
