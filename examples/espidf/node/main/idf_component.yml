@@ -1,0 +1,5 @@
+dependencies:
+  idf:
+    version: ">=5.4.1"
+  ieee802_15_4:
+    path: ../../../../
