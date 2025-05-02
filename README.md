@@ -5,7 +5,7 @@
 [![GitHub release](https://img.shields.io/github/release/Johboh/ieee-802_15_4.svg)](https://github.com/Johboh/ieee-802_15_4/releases)
 [![Clang-format](https://github.com/Johboh/ieee-802_15_4/actions/workflows/clang-format.yaml/badge.svg)](https://github.com/Johboh/ieee-802_15_4)
 
-Arduino (using Arduino IDE or PlatformIO) and ESP-IDF (using Espressif IoT Development Framework or PlatformIO) compatible library for sending and reciving messages over 802.15.4
+Arduino (using Arduino IDE or PlatformIO) and ESP-IDF (using Espressif IoT Development Framework or PlatformIO) compatible library for sending and reciving messages over 802.15.4 for ESP32-C6 and ESP32-H2 (from ESP-IDF 5.1).
 
 ### Installation
 #### PlatformIO (Arduino or ESP-IDF):
