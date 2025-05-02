@@ -14,8 +14,29 @@
 
 using namespace Ieee802154Internal;
 
-static QueueHandle_t _receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
-static QueueHandle_t _transmit_queue = xQueueCreate(10, sizeof(TransmitResult));
+static QueueHandle_t __ieee802154_receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
+static QueueHandle_t __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TransmitResult));
+
+// Callback available from 5.4.1, 5.3.3, 5.2.4, 5.1.6
+// Before this, manually declare callbacks.
+// See initialize()
+#if ESP_IDF_VERSION_MAJOR == 5 and ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH < 6) or                      \
+                                    (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH < 4) or                      \
+                                    (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH < 3) or                      \
+                                    (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH < 1))
+void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
+                                  esp_ieee802154_frame_info_t *ack_frame_info) {
+  Ieee802154::ieee802154_transmit_done_cb(frame, ack, ack_frame_info);
+}
+
+void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info) {
+  Ieee802154::ieee802154_receive_done_cb(frame, frame_info);
+}
+
+void esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error) {
+  Ieee802154::ieee802154_transmit_failed_cb(frame, error);
+}
+#endif
 
 void IRAM_ATTR Ieee802154::ieee802154_receive_done_cb(uint8_t *raw_frame, esp_ieee802154_frame_info_t *frame_info) {
   ReceivedFrame received_frame;
@@ -28,7 +49,7 @@ void IRAM_ATTR Ieee802154::ieee802154_receive_done_cb(uint8_t *raw_frame, esp_ie
   esp_ieee802154_receive_handle_done(raw_frame);
 
   auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(_receive_queue, &received_frame, &xHigherPriorityTaskWoken);
+  auto result = xQueueSendFromISR(__ieee802154_receive_queue, &received_frame, &xHigherPriorityTaskWoken);
   if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
     portYIELD_FROM_ISR();
   }
@@ -53,7 +74,7 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
   }
 
   auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
+  auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
   if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
     portYIELD_FROM_ISR();
   }
@@ -64,7 +85,7 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_failed_cb(const uint8_t *frame, e
   transmit_result.error = error;
 
   auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
+  auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
   if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
     portYIELD_FROM_ISR();
   }
@@ -76,7 +97,7 @@ void IRAM_ATTR Ieee802154::ieee802154_energy_detect_done_cb(int8_t power) {}
 
 esp_err_t IRAM_ATTR Ieee802154::ieee802154_enh_ack_generator_cb(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
                                                                 uint8_t *enhack_frame) {
-  ESP_EARLY_LOGI(Ieee802154Log::TAG, "ieee802154_enh_ack_generator_cb");
+  // TODO(johboh): Figure out how to use this one to send pending ACKs without needing the additional data request.
   return ESP_OK;
 }
 
@@ -89,7 +110,7 @@ void Ieee802154::cbTask(void *pvParameters) {
 
   while (1) {
     ReceivedFrame received_message;
-    auto rx_result = xQueueReceive(_receive_queue, &received_message, portMAX_DELAY);
+    auto rx_result = xQueueReceive(__ieee802154_receive_queue, &received_message, portMAX_DELAY);
     if (rx_result == pdPASS) {
       // Accept frames for us specifically, or for short broadcast.
       // This is also done in hardware, but this is future preperation for promiscuous mode.
@@ -179,7 +200,11 @@ void Ieee802154::initialize(bool initialize_nvs) {
     initializeNvs();
   }
 
-  // From 5.4.1, 5.3.3, 5.2.4, 5.1.6
+// Callback available from 5.4.1, 5.3.3, 5.2.4, 5.1.6
+#if ESP_IDF_VERSION_MAJOR == 5 and ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                     \
+                                    (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                     \
+                                    (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                     \
+                                    (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1))
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
       .rx_done_cb = ieee802154_receive_done_cb,
       .rx_sfd_done_cb = ieee802154_receive_sfd_done_cb,
@@ -189,6 +214,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
       .ed_done_cb = ieee802154_energy_detect_done_cb,
       .enh_ack_generator_cb = ieee802154_enh_ack_generator_cb,
   }));
+#endif
 
   ESP_ERROR_CHECK(esp_ieee802154_enable());
 
@@ -380,7 +406,7 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
 
   TransmitResult transmit_result;
   // TODO(johboh): move timeout to config
-  auto tx_result = xQueueReceive(_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS);
+  auto tx_result = xQueueReceive(__ieee802154_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS);
   if (tx_result == pdPASS) {
     switch (transmit_result.error) {
     case ESP_IEEE802154_TX_ERR_NONE:
