@@ -20,7 +20,7 @@ In your existing `idf_component.yml` or in a new `idf_component.yml` next to you
 ```
 dependencies:
   johboh/ieee-802_15_4:
-    version: ">=0.5.1"
+    version: ">=0.5.2"
 ```
 
 #### Arduino IDE:
