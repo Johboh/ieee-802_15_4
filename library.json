@@ -21,16 +21,6 @@
   "platforms": ["espressif32"],
   "examples": [
     {
-      "name": "Arduino host",
-      "base": "examples/arduino/host",
-      "files": ["host.ino"]
-    },
-    {
-      "name": "Arduino host",
-      "base": "examples/arduino/node",
-      "files": ["node.ino"]
-    },
-    {
       "name": "ESP-IDF host",
       "base": "examples/espidf/host/main",
       "files": ["main.cpp"]

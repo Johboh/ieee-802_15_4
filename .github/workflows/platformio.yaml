@@ -16,11 +16,11 @@ jobs:
     strategy:
       matrix:
         target:
-          - path: examples/arduino/host
+          - path: examples/espidf/host
             library: library.json
             remove: ""
             extra_dependencies: ""
-          - path: examples/arduino/node
+          - path: examples/espidf/node
             library: library.json
             remove: ""
             extra_dependencies: ""
