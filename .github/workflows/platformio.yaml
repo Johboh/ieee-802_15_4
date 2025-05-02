@@ -16,11 +16,11 @@ jobs:
     strategy:
       matrix:
         target:
-          - path: examples/espidf/host
+          - path: examples/espidf/host/main/main.cpp
             library: library.json
             remove: ""
             extra_dependencies: ""
-          - path: examples/espidf/node
+          - path: examples/espidf/node/main/main.cpp
             library: library.json
             remove: ""
             extra_dependencies: ""
