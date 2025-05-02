@@ -91,14 +91,17 @@ void Ieee802154::cbTask(void *pvParameters) {
     ReceivedFrame received_message;
     auto rx_result = xQueueReceive(_receive_queue, &received_message, portMAX_DELAY);
     if (rx_result == pdPASS) {
-      // Some filtering. Require 64 bits addresses.
-      // Do additional filtering to only match messages for us or broadcast.
-      // As far as I understood, its not possible to broadcast with 802.15.4, unless receiver
-      // is in promiscuous mode.
+      // Accept frames for us specifically, or for short broadcast.
+      // This is also done in hardware, but this is future preperation for promiscuous mode.
       auto destination_address = Ieee802154::macToMacLE(received_message.dst_addr);
-      auto for_us = destination_address == UINT64_MAX || destination_address == _this->deviceMacAddress();
-      if (received_message.fcf.src_addr_mode == 0x03 && received_message.fcf.dest_addr_mode == 0x3 &&
-          received_message.frame_info.process && for_us) {
+      auto destination_address_short = Ieee802154::macToShort(received_message.dst_addr);
+      auto is_extended_origin = received_message.fcf.src_addr_mode == 0x03;
+      auto is_extended_unicast =
+          received_message.fcf.dest_addr_mode == 0x3 && destination_address == _this->deviceMacAddress();
+      auto is_short_broadcast =
+          received_message.fcf.dest_addr_mode == 0x2 && destination_address_short == __UINT16_MAX__;
+
+      if (received_message.frame_info.process && is_extended_origin && (is_extended_unicast || is_short_broadcast)) {
         auto source_address = Ieee802154::macToMac(received_message.src_addr);
         if (received_message.fcf.frame_type == 0x03 && received_message.data[0] == 0x04) {
           // We got a MAC command frame with a "Data Request".
@@ -206,7 +209,8 @@ void Ieee802154::initialize(bool initialize_nvs) {
     mac[7 - i] = temp;
   }
   ESP_ERROR_CHECK(esp_ieee802154_set_extended_address(mac));
-  ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(_configuration.handle_broadcasts));
+  // TODO(johboh): Potentially support these promiscuous and coordinator.
+  ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(false));
   ESP_ERROR_CHECK(esp_ieee802154_set_coordinator(false));
 
   if (_on_message) {
@@ -224,10 +228,25 @@ void Ieee802154::teardown() {
   _initialized = false;
 }
 
-bool Ieee802154::transmit(uint8_t *payload, uint8_t payload_size) {
-  uint8_t destination_address[8];
-  memset(destination_address, 0xFF, sizeof(destination_address));
-  return transmit(Ieee802154::macToMac(destination_address), payload, payload_size);
+bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
+  if (!_initialized) {
+    return false;
+  }
+
+  auto total_length = calculateFrameLength(payload_size);
+  uint8_t frame_buffer[total_length];
+  buildBroadcastFrame(frame_buffer, 0x01 /* frame type = Data Frame */, payload, payload_size);
+
+  bool cca = true;
+  uint16_t attempt = 0;
+  auto result = transmitInternal(frame_buffer, cca);
+  while (attempt++ < _configuration.data_frame_retries &&
+         (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending)) {
+    vTaskDelay((10 + attempt) / portTICK_PERIOD_MS);
+    result = transmitInternal(frame_buffer, cca);
+  }
+
+  return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
 }
 
 bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size) {
@@ -242,7 +261,8 @@ bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t pa
   bool cca = true;
   uint16_t attempt = 0;
   auto result = transmitInternal(frame_buffer, cca);
-  while (attempt++ < _configuration.data_frame_retries && result != InternalTransmitResult::Success) {
+  while (attempt++ < _configuration.data_frame_retries &&
+         (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending)) {
     vTaskDelay((10 + attempt) / portTICK_PERIOD_MS);
     result = transmitInternal(frame_buffer, cca);
   }
@@ -310,6 +330,38 @@ void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t 
   // We stay within same PAN
   frame->destination_pan_id = _configuration.pan_id;
   frame->destination_mac = destination_mac;
+
+  uint8_t mac[8];
+  ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
+  frame->source_mac = macToMac(mac);
+
+  // Copy the payload
+  memcpy(frame->payload, payload, payload_size);
+}
+
+void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, uint8_t *payload,
+                                     uint8_t payload_size) {
+  auto *frame = reinterpret_cast<Ieee802154Specification::BroadcastFrame *>(frame_buffer);
+
+  // Populate the frame fields
+  auto total_length = calculateFrameLength(payload_size);
+  frame->length = total_length - 1; // Exclude the length field itself
+  frame->fcf = (Ieee802154Specification::FrameControlField){
+      .frame_type = frame_type,
+      .security_enabled = 0,
+      .frame_pending = 0,
+      .ack_request = 0, // Broadcast cannot be acked
+      .pan_id_compression = 1,
+      .reserved = 0,
+      .sequence_number_suppression = 0,
+      .ie_list_present = 0,
+      .dest_addr_mode = 0x2, // 16-bit
+      .frame_version = 0x1,  // IEEE 802.15.4-2006
+      .src_addr_mode = 0x3,  // 64-bit
+  };
+  frame->sequence_number = ++_sequence_number;
+  frame->destination_pan_id = 0xFFFF; // Broadcast
+  frame->destination_mac = 0xFFFF;    // Broadcast
 
   uint8_t mac[8];
   ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
@@ -416,6 +468,9 @@ uint64_t Ieee802154::macToMacLE(uint8_t *mac_addr) {
          ((uint64_t)mac_addr[4] << 32) + ((uint64_t)mac_addr[3] << 24) + ((uint64_t)mac_addr[2] << 16) +
          ((uint64_t)mac_addr[1] << 8) + ((uint64_t)mac_addr[0]);
 }
+
+// 8 bytes mac addresses array into short 16-bit address.
+uint16_t Ieee802154::macToShort(uint8_t *mac_addr) { return ((uint16_t)mac_addr[1] << 8) + ((uint16_t)mac_addr[0]); }
 
 bool IRAM_ATTR Ieee802154::parseFrame(uint8_t *raw_frame, ReceivedFrame *received_frame) {
   if (raw_frame != nullptr) {

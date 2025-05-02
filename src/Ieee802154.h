@@ -75,15 +75,6 @@ public:
      * How many times to try resending a data request frame on failure (no ack, busy cca etc)
      */
     uint8_t data_request_frame_retries = 30;
-
-    /**
-     * As much as I have figured out, the only way to receive broadcast messages is to be in promiscuous mode. If this
-     * device need to accept broadcasts, this can be set to true, which will set the receiver in promiscuous mode.
-     * However, we will only accept messages with destination address equal our address or the broadcast address. If set
-     * to false, we only accept unicast messages targeting this device.
-     */
-    bool handle_broadcasts = false;
-
     /**
      * @brief Transmit power in dB.
      * Unknown allowed range.
@@ -141,7 +132,7 @@ public:
    * @param payload the payload to send.
    * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
    */
-  bool transmit(uint8_t *payload, uint8_t payload_size);
+  bool broadcast(uint8_t *payload, uint8_t payload_size);
   /**
    * @brief Send frame to destination.
    *
@@ -194,6 +185,7 @@ private:
   void initializeNvs();
   // Including FCS length (2 bytes)
   uint8_t calculateFrameLength(uint8_t payload_size);
+  void buildBroadcastFrame(uint8_t *frame, uint8_t frame_type, uint8_t *payload, uint8_t payload_size);
   void buildFrame(uint8_t *frame, uint8_t frame_type, uint64_t destination_mac, uint8_t *payload, uint8_t payload_size);
 
   enum class InternalTransmitResult {
@@ -209,6 +201,7 @@ private:
 
 private: // static helpers
   static uint64_t macToMacLE(uint8_t *mac_addr);
+  static uint16_t macToShort(uint8_t *mac_addr);
   static bool parseFrame(uint8_t *raw_frame, Ieee802154Internal::ReceivedFrame *received_frame);
   static void printFrameInfo(esp_ieee802154_frame_info_t &frame_info);
   static void printFrameControlField(const Ieee802154Specification::FrameControlField &fcf);

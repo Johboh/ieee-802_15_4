@@ -32,6 +32,19 @@ struct __attribute__((packed)) Frame {
   uint8_t payload[];
 };
 
+// Frame for 64bit src address, 16bit dst address, and PAN ID compression.
+// Used for broadcasting.
+// This is the frame we send on the wire.
+struct __attribute__((packed)) BroadcastFrame {
+  uint8_t length; // Total frame length, including FCS
+  FrameControlField fcf;
+  uint8_t sequence_number;
+  uint16_t destination_pan_id = 0xFFFF;
+  uint16_t destination_mac = 0xFFFF;
+  uint64_t source_mac;
+  uint8_t payload[];
+};
+
 }; // namespace Ieee802154Specification
 
 // Stuctures related to ESP-IDF 802.15.4 internals, upon receiving a frame or a result after trasmitting a frame.
