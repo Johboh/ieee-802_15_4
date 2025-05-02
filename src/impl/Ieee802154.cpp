@@ -224,6 +224,9 @@ void Ieee802154::initialize(bool initialize_nvs) {
 }
 
 void Ieee802154::teardown() {
+  if (!_initialized) {
+    return;
+  }
   ESP_ERROR_CHECK(esp_ieee802154_disable());
   _initialized = false;
 }
