@@ -8,7 +8,7 @@ struct __attribute__((packed)) ApplicationMessage {
 
 char buffer[64];
 
-Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191, .handle_broadcasts = false}, [](Ieee802154::Message message) {
+Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191}, [](Ieee802154::Message message) {
   Serial.println("Got Message");
   sprintf(buffer, "source MAC: 0x%llx", message.source_address);
   Serial.println(buffer);
