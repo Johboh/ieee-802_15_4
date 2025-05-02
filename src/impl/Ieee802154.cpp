@@ -1,4 +1,5 @@
 #include "Ieee802154.h"
+#include <algorithm>
 #include <cstring>
 #include <esp_err.h>
 #include <esp_log.h>
@@ -188,7 +189,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
 
   ESP_ERROR_CHECK(esp_ieee802154_enable());
 
-  changeChannel(_configuration.channel);
+  setChannel(_configuration.channel);
 
   ESP_ERROR_CHECK(esp_ieee802154_set_panid(_configuration.pan_id));
 
@@ -387,9 +388,13 @@ void Ieee802154::receive(OnMessage on_message) {
   _on_message = on_message;
 }
 
-void Ieee802154::changeChannel(uint8_t channel) {
-  _configuration.channel = channel;
+void Ieee802154::setChannel(uint8_t channel) {
+  _configuration.channel = std::clamp(channel, (uint8_t)11, (uint8_t)26);
   ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
+}
+
+void Ieee802154::setNumberOfDataFramesRetries(uint8_t number_of_retries) {
+  _configuration.data_frame_retries = number_of_retries;
 }
 
 uint64_t Ieee802154::deviceMacAddress() {

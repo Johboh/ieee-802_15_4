@@ -118,11 +118,16 @@ public:
   uint8_t nextSequenceNumber() { return _sequence_number; }
 
   /**
-   * @brief Change the channel.
+   * @brief Set/change the channel.
    *
    * @param channel channel number between 11 and 26.
    */
-  void changeChannel(uint8_t channel);
+  void setChannel(uint8_t channel);
+
+  /**
+   * Set how many times to try resending a data frame on failure (no ack, busy cca etc)
+   */
+  void setNumberOfDataFramesRetries(uint8_t number_of_retries);
 
   /**
    * @brief Get the device mac address for this device. This would be the source address in the 802.15.4 frame (or the
