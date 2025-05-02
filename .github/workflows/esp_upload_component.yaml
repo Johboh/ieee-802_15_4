@@ -1,4 +1,4 @@
-name: Push IEEE802154 to Espressif Component Service
+name: Push ieee-802_15_4 to Espressif Component Service
 on:
   release:
     types: [created]
@@ -20,9 +20,9 @@ jobs:
       - name: Remove github actions
         run: rm -rf .github
 
-      - name: Upload IEEE802154 to component registry
+      - name: Upload ieee-802_15_4 to component registry
         uses: espressif/upload-components-ci-action/@v1
         with:
-          name: "IEEE802154"
+          name: "ieee-802_15_4"
           namespace: "johboh"
           api_token: ${{ secrets.ESP_IDF_COMPONENT_API_TOKEN }}

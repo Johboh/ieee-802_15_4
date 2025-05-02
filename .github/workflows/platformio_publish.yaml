@@ -1,4 +1,4 @@
-name: Push IEEE802154 to PlatformIO registry
+name: Push ieee-802_15_4 to PlatformIO registry
 on:
   release:
     types: [created]

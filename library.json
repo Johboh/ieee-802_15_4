@@ -1,5 +1,5 @@
 {
-  "name": "GCMEncryption",
+  "name": "ieee-802_15_4",
   "keywords": "esp32, 802.15.4, ieee",
   "description": "Simplifed version of sending and reciving messages over 802.15.4",
   "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
