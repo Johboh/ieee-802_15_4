@@ -27,10 +27,10 @@ dependencies:
 Search for `ieee-802_15_4` by `johboh` in the library manager. See note about version above.
 
 ### Examples
-- [Using Arduino IDE/CLI or Platform IO Arduino host](examples/arduino/host/host.ino)
-- [Using Arduino IDE/CLI or Platform IO Arduino node](examples/arduino/node/node.ino)
-- [ESP-IDF framework host](examples/espidf/host/main/main.cpp)
-- [ESP-IDF framework node](examples/espidf/node/main/main.cpp)
+- [Using Arduino IDE/CLI, host](examples/arduino/host/host.ino)
+- [Using Arduino IDE/CLI, node](examples/arduino/node/node.ino)
+- [Using ESP-IDF framework/Platform IO, host](examples/espidf/host/main/main.cpp)
+- [Using ESP-IDF framework/Platform IO, node](examples/espidf/node/main/main.cpp)
 
 ### Compatibility
 - As of now, ESP32-C6 and ESP32-H2 are the only ones supporting 802.15.4, but might be more in the future.
