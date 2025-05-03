@@ -90,7 +90,8 @@ public:
    * @param on_message if set, radio will go into receive mode and allow for reciving messages targeted to
    * this device, or if promiscuous_mode is set to true in the Configuration, also broadcast messages. Can also be set
    * later using receive() call.
-   * @param on_data_request callback for when a data request was received. See set/clearPending().
+   * @param on_data_request callback for when a data request was received. See set/clearPending(). This callback will be
+   * called regardless if the sender has any pending data.
    */
   Ieee802154(Configuration configuration, OnMessage on_message = {}, OnDataRequest on_data_request = {});
 
