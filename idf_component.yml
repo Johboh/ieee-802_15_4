@@ -1,4 +1,4 @@
-version: "0.5.4"
+version: "0.5.5"
 description: Simplifed version of sending and reciving messages over 802.15.4
 url: https://github.com/Johboh/IEEE802154
 dependencies:
