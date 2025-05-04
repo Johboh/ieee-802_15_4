@@ -253,6 +253,7 @@ void Ieee802154::teardown() {
   if (!_initialized) {
     return;
   }
+  receive({});
   ESP_ERROR_CHECK(esp_ieee802154_disable());
   _initialized = false;
 }
