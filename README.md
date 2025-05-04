@@ -9,7 +9,7 @@ Arduino (using Arduino IDE) and ESP-IDF (using Espressif IoT Development Framewo
 
 ### Installation
 #### PlatformIO (Arduino or ESP-IDF):
-Add the following to `libs_deps`:
+Add the following to `lib_deps`:
 ```
    Johboh/ieee-802_15_4
 ```
