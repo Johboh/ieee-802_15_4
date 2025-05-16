@@ -108,7 +108,15 @@ public:
 
   uint16_t panId() { return _configuration.pan_id; }
   uint16_t channel() { return _configuration.channel; }
+  /**
+   * Sequence number to use in the next outgoing message.
+   */
   uint8_t nextSequenceNumber() { return _sequence_number; }
+  /**
+   * Clear the persisted/last known sequence number for a given device/MAC.
+   * Useful in case you know that the device is going to forget its sequence number, for example on firmware update.
+   */
+  void clearLastKnownSequenceNumberFor(uint64_t mac) { _last_processed_sequence_number.erase(mac); }
 
   /**
    * @brief Set/change the channel.
