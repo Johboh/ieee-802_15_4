@@ -18,6 +18,8 @@ Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191});
 void transmitTask(void *pvParameters) {
   bool data_frame = false;
   while (1) {
+    // YOU MUST UPDATE THIS TO THE MAC ADDRESS OF YOUR HOST!
+    // See printout in your host console for MAC addresses.
     uint64_t destination_address = 0xe4b323fffe926d10;
 
     if (data_frame) {
