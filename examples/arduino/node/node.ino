@@ -17,6 +17,8 @@ void setup() {
 
 bool data_frame = false;
 void loop() {
+  // YOU MUST UPDATE THIS TO THE MAC ADDRESS OF YOUR HOST!
+  // See printout in your host console for MAC addresses.
   uint64_t destination_address = 0xe4b323fffe926d10;
 
   if (data_frame) {
