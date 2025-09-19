@@ -200,11 +200,12 @@ void Ieee802154::initialize(bool initialize_nvs) {
     initializeNvs();
   }
 
-// Callback available from 5.4.1, 5.3.3, 5.2.4, 5.1.6
-#if ESP_IDF_VERSION_MAJOR == 5 and ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1))
+// Callback available from 5.5+, 5.4.1+, 5.3.3+, 5.2.4+, 5.1.6+
+#if ESP_IDF_VERSION_MAJOR == 5 and                                                                                     \
+    ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1) or ESP_IDF_VERSION_MINOR >= 5)
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
       .rx_done_cb = ieee802154_receive_done_cb,
       .rx_sfd_done_cb = ieee802154_receive_sfd_done_cb,
