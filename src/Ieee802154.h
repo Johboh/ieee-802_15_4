@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <esp_idf_version.h>
 #include <esp_ieee802154.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -247,6 +249,7 @@ private:
   OnMessage _on_message;
   std::mutex _send_mutex;
   bool _initialized = false;
+  TaskHandle_t cbTaskHandle;
   Configuration _configuration;
   uint8_t _sequence_number = 0;
   OnDataRequest _on_data_request;

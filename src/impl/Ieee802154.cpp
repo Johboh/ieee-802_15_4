@@ -8,7 +8,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/queue.h>
-#include <freertos/task.h>
 #include <nvs.h>
 #include <nvs_flash.h>
 
@@ -245,7 +244,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
     ESP_ERROR_CHECK(esp_ieee802154_receive());
   }
 
-  xTaskCreate(cbTask, "cbTask", 8192, this, 20, NULL);
+  xTaskCreate(cbTask, "cbTask", 8192, this, 20, &cbTaskHandle);
   printState();
   _initialized = true;
 }
@@ -256,6 +255,12 @@ void Ieee802154::teardown() {
   }
   receive({});
   ESP_ERROR_CHECK(esp_ieee802154_disable());
+
+  if (cbTaskHandle != nullptr) {
+    vTaskDelete(cbTaskHandle);
+    cbTaskHandle = nullptr;
+  }
+
   _initialized = false;
 }
 
