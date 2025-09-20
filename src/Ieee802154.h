@@ -16,6 +16,15 @@ namespace Ieee802154Log {
 const char TAG[] = "802.15.4";
 } // namespace Ieee802154Log
 
+// Callback available from 5.5+, 5.4.1+, 5.3.3+, 5.2.4+, 5.1.6+
+#if ESP_IDF_VERSION_MAJOR == 5 and                                                                                     \
+    ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                                                    \
+     (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1) or ESP_IDF_VERSION_MINOR >= 5)
+#define IEEE802154_USE_CALLBACKS 1
+#endif
+
 /**
  * Class around ESP-IDF 802.15.4 layer.
  * Requires: 5.4.1+, 5.3.3+, 5.2.4+, 5.1.6+
@@ -224,13 +233,9 @@ private: // static helpers
 private: // static callbacks
   static void cbTask(void *pvParameters);
 
-// Callback available from 5.4.1, 5.3.3, 5.2.4, 5.1.6
 // Private callbacks if we have callbacks support, otherwise public.
 // See initialize()
-#if ESP_IDF_VERSION_MAJOR == 5 and ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                     \
-                                    (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1))
+#ifdef IEEE802154_USE_CALLBACKS
 private:
 #else
 public:

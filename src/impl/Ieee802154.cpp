@@ -11,21 +11,12 @@
 #include <nvs.h>
 #include <nvs_flash.h>
 
-// Callback available from 5.5+, 5.4.1+, 5.3.3+, 5.2.4+, 5.1.6+
-#if ESP_IDF_VERSION_MAJOR == 5 and                                                                                     \
-    ((ESP_IDF_VERSION_MINOR == 1 and ESP_IDF_VERSION_PATCH >= 6) or                                                    \
-     (ESP_IDF_VERSION_MINOR == 2 and ESP_IDF_VERSION_PATCH >= 4) or                                                    \
-     (ESP_IDF_VERSION_MINOR == 3 and ESP_IDF_VERSION_PATCH >= 3) or                                                    \
-     (ESP_IDF_VERSION_MINOR == 4 and ESP_IDF_VERSION_PATCH >= 1) or ESP_IDF_VERSION_MINOR >= 5)
-#define USE_CALLBACKS 1
-#endif
-
 using namespace Ieee802154Internal;
 
 static QueueHandle_t __ieee802154_receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
 static QueueHandle_t __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TransmitResult));
 
-#ifdef USE_CALLBACKS
+#ifndef IEEE802154_USE_CALLBACKS
 void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
                                   esp_ieee802154_frame_info_t *ack_frame_info) {
   Ieee802154::ieee802154_transmit_done_cb(frame, ack, ack_frame_info);
@@ -202,7 +193,7 @@ void Ieee802154::initialize(bool initialize_nvs) {
     initializeNvs();
   }
 
-#ifdef USE_CALLBACKS
+#ifdef IEEE802154_USE_CALLBACKS
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
       .rx_done_cb = ieee802154_receive_done_cb,
       .rx_sfd_done_cb = ieee802154_receive_sfd_done_cb,
@@ -256,7 +247,7 @@ void Ieee802154::teardown() {
   ESP_ERROR_CHECK(esp_ieee802154_sleep());
   ESP_ERROR_CHECK(esp_ieee802154_disable());
 
-#ifdef USE_CALLBACKS
+#ifdef IEEE802154_USE_CALLBACKS
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_unregister());
 #endif
 
