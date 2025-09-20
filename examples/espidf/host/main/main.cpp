@@ -28,7 +28,6 @@ void app_main();
 void app_main(void) {
   _ieee802154.initialize();
   ESP_LOGI(LOG_TAG, "This device IEEE802.15.4 MAC: 0x%llx", _ieee802154.deviceMacAddress());
-  _ieee802154.setPending(0x543204fffe017694);
 
   while (1) {
     vTaskDelay(500 / portTICK_PERIOD_MS);

@@ -22,8 +22,6 @@ void setup() {
   _ieee802154.initialize();
   sprintf(buffer, "This device IEEE802.15.4 MAC: 0x%llx", _ieee802154.deviceMacAddress());
   Serial.println(buffer);
-
-  _ieee802154.setPending(0x543204fffe017694);
 }
 
 void loop() {}
