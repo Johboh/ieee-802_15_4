@@ -52,6 +52,7 @@ public:
     uint64_t destination_address = 0;
     uint8_t payload[127] = {0};
     uint8_t payload_size = 0;
+    int8_t rssi = 0;
   };
 
   typedef std::function<void(Ieee802154::Message message)> OnMessage;

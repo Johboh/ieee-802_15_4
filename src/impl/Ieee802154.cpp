@@ -137,6 +137,7 @@ void Ieee802154::cbTask(void *pvParameters) {
                   .source_address = source_address,
                   .destination_address = destination_address,
                   .payload_size = std::min(received_message.data_length, (uint8_t)sizeof(message.payload)),
+                  .rssi = received_message.frame_info.rssi,
               };
               memcpy(message.payload, received_message.data, message.payload_size);
               _this->_on_message(message);
