@@ -237,7 +237,7 @@ private:
 private: // static helpers
   static uint64_t macToMacLE(uint8_t *mac_addr);
   static uint16_t macToShort(uint8_t *mac_addr);
-  static bool parseFrame(uint8_t *raw_frame, Ieee802154Internal::ReceivedFrame *received_frame);
+  static bool parseFrame(const uint8_t *raw_frame, Ieee802154Internal::ReceivedFrame *received_frame);
   static void printFrameInfo(esp_ieee802154_frame_info_t &frame_info);
   static void printFrameControlField(const Ieee802154Specification::FrameControlField &fcf);
   static void printMessageAddresses(const Ieee802154Internal::ReceivedFrame &message);

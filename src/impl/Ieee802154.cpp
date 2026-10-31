@@ -35,16 +35,19 @@ void IRAM_ATTR Ieee802154::ieee802154_receive_done_cb(uint8_t *raw_frame, esp_ie
   ReceivedFrame received_frame;
   received_frame.frame_info = *frame_info;
 
+  bool ok = false;
   if (frame_info->process) {
-    parseFrame(raw_frame, &received_frame);
+    ok = parseFrame(raw_frame, &received_frame);
   }
 
   esp_ieee802154_receive_handle_done(raw_frame);
 
-  auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(__ieee802154_receive_queue, &received_frame, &xHigherPriorityTaskWoken);
-  if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
-    portYIELD_FROM_ISR();
+  if (ok) {
+    auto xHigherPriorityTaskWoken = pdFALSE;
+    auto result = xQueueSendFromISR(__ieee802154_receive_queue, &received_frame, &xHigherPriorityTaskWoken);
+    if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
   }
 }
 
@@ -56,14 +59,11 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
   transmit_result.pending = false;
   transmit_result.error = ESP_IEEE802154_TX_ERR_NONE;
 
-  // For some reason, we cannot trust ack_frame_info when trying to figure out if pending bit is set,
-  // as it will never be set in ack_frame_info.
-  // Instead, we need to parse the frame and look at frame_pending bit in the fcf.
-  if (ack != nullptr) {
-    ReceivedFrame received_frame;
-    parseFrame((uint8_t *)ack, &received_frame);
-    transmit_result.pending = received_frame.fcf.frame_pending;
-    esp_ieee802154_receive_handle_done(ack);
+  // An immediate ACK frame in 802.15.4 is 5 bytes: length (1), FCF (2), sequence number (1), FCS (2).
+  // The frame_pending bit is bit 4 of the first FCF byte (ack[1]).
+  if (ack != nullptr && ack[0] >= 3) {
+    auto *fcf = reinterpret_cast<const Ieee802154Specification::FrameControlField *>(ack + 1);
+    transmit_result.pending = fcf->frame_pending;
   }
 
   auto xHigherPriorityTaskWoken = pdFALSE;
@@ -517,69 +517,109 @@ uint64_t Ieee802154::macToMacLE(uint8_t *mac_addr) {
 // 8 bytes mac addresses array into short 16-bit address.
 uint16_t Ieee802154::macToShort(uint8_t *mac_addr) { return ((uint16_t)mac_addr[1] << 8) + ((uint16_t)mac_addr[0]); }
 
-bool IRAM_ATTR Ieee802154::parseFrame(uint8_t *raw_frame, ReceivedFrame *received_frame) {
-  if (raw_frame != nullptr) {
-    auto length = raw_frame[0];
-    received_frame->frame_length = length;
-
-    // Dynamically calculate MAC header length based on FCF
-    Ieee802154Specification::FrameControlField *fcf =
-        reinterpret_cast<Ieee802154Specification::FrameControlField *>(raw_frame + 1);
-
-    uint8_t mac_hdr_length = 3;        // Base header size (FCF + Sequence Number)
-    uint8_t *addr_ptr = raw_frame + 3; // after length(1 byte) and FCF (2 bytes)
-
-    received_frame->sequence_number = *addr_ptr;
-    addr_ptr += 1;
-
-    received_frame->fcf = *fcf;
-
-    if (fcf->dest_addr_mode != 0) {
-      memcpy(&received_frame->dst_pan, addr_ptr, 2);
-      addr_ptr += 2;
-      mac_hdr_length += 2;
-
-      if (fcf->dest_addr_mode == 0x2) {
-        memcpy(received_frame->dst_addr, addr_ptr, 2);
-        addr_ptr += 2;
-        mac_hdr_length += 2;
-      } else if (fcf->dest_addr_mode == 0x3) {
-        memcpy(received_frame->dst_addr, addr_ptr, 8);
-        addr_ptr += 8;
-        mac_hdr_length += 8;
-      }
-    } else {
-      // no dest address
-    }
-
-    if (!fcf->pan_id_compression) {
-      received_frame->with_src_pan = true;
-      memcpy(&received_frame->src_pan, addr_ptr, 2);
-      addr_ptr += 2;
-      mac_hdr_length += 2;
-    }
-
-    if (fcf->src_addr_mode != 0) {
-      if (fcf->src_addr_mode == 0x2) {
-        memcpy(received_frame->src_addr, addr_ptr, 2);
-        addr_ptr += 2;
-        mac_hdr_length += 2;
-      } else if (fcf->src_addr_mode == 0x3) {
-        memcpy(received_frame->src_addr, addr_ptr, 8);
-        addr_ptr += 8;
-        mac_hdr_length += 8;
-      }
-    }
-
-    // Calculate payload length
-    uint8_t payload_length = length - mac_hdr_length - 2; // Also remove FCS
-    if (payload_length > 0 && payload_length <= sizeof(received_frame->data)) {
-      memcpy(received_frame->data, addr_ptr, payload_length);
-      received_frame->data_length = payload_length;
-    }
-    return true;
+bool IRAM_ATTR Ieee802154::parseFrame(const uint8_t *raw_frame, ReceivedFrame *received_frame) {
+  if (raw_frame == nullptr || received_frame == nullptr) {
+    return false;
   }
-  return false;
+
+  auto length = raw_frame[0];
+  received_frame->frame_length = length;
+  received_frame->data_length = 0;
+
+  // Minimum 802.15.4 frame has FCF (2), sequence number (1), and FCS (2) = 5 bytes
+  if (length < 5) {
+    return false;
+  }
+
+  auto *fcf = reinterpret_cast<const Ieee802154Specification::FrameControlField *>(raw_frame + 1);
+  received_frame->fcf = *fcf;
+
+  uint8_t mac_hdr_length = 3;              // FCF (2) + Sequence Number (1)
+  const uint8_t *addr_ptr = raw_frame + 3; // points to sequence number byte
+
+  received_frame->sequence_number = *addr_ptr++;
+
+  if (fcf->dest_addr_mode == 0x2) {
+    if (mac_hdr_length + 4 + 2 > length) {
+      return false;
+    }
+    memcpy(&received_frame->dst_pan, addr_ptr, 2);
+    addr_ptr += 2;
+    memcpy(received_frame->dst_addr, addr_ptr, 2);
+    addr_ptr += 2;
+    mac_hdr_length += 4;
+  } else if (fcf->dest_addr_mode == 0x3) {
+    if (mac_hdr_length + 10 + 2 > length) {
+      return false;
+    }
+    memcpy(&received_frame->dst_pan, addr_ptr, 2);
+    addr_ptr += 2;
+    memcpy(received_frame->dst_addr, addr_ptr, 8);
+    addr_ptr += 8;
+    mac_hdr_length += 10;
+  } else if (fcf->dest_addr_mode != 0) {
+    return false;
+  }
+
+  // Source PAN ID is only present if source address is present AND
+  // (pan_id_compression is 0 when dest address is present, or dest address is absent).
+  bool has_src_pan = false;
+  if (fcf->src_addr_mode != 0) {
+    if (fcf->dest_addr_mode != 0) {
+      has_src_pan = !fcf->pan_id_compression;
+    } else {
+      has_src_pan = true;
+    }
+  }
+
+  if (has_src_pan) {
+    if (mac_hdr_length + 2 + 2 > length) {
+      return false;
+    }
+    received_frame->with_src_pan = true;
+    memcpy(&received_frame->src_pan, addr_ptr, 2);
+    addr_ptr += 2;
+    mac_hdr_length += 2;
+  } else {
+    received_frame->with_src_pan = false;
+    if (fcf->pan_id_compression && fcf->dest_addr_mode != 0) {
+      received_frame->src_pan = received_frame->dst_pan;
+    }
+  }
+
+  if (fcf->src_addr_mode == 0x2) {
+    if (mac_hdr_length + 2 + 2 > length) {
+      return false;
+    }
+    memcpy(received_frame->src_addr, addr_ptr, 2);
+    addr_ptr += 2;
+    mac_hdr_length += 2;
+  } else if (fcf->src_addr_mode == 0x3) {
+    if (mac_hdr_length + 8 + 2 > length) {
+      return false;
+    }
+    memcpy(received_frame->src_addr, addr_ptr, 8);
+    addr_ptr += 8;
+    mac_hdr_length += 8;
+  } else if (fcf->src_addr_mode != 0) {
+    return false;
+  }
+
+  // Calculate payload length (excluding MHR and 2-byte FCS)
+  if (length >= mac_hdr_length + 2) {
+    uint8_t payload_length = length - mac_hdr_length - 2;
+    if (payload_length > sizeof(received_frame->data)) {
+      payload_length = sizeof(received_frame->data);
+    }
+    if (payload_length > 0) {
+      memcpy(received_frame->data, addr_ptr, payload_length);
+    }
+    received_frame->data_length = payload_length;
+  } else {
+    return false;
+  }
+
+  return true;
 }
 
 void Ieee802154::printFrameInfo(esp_ieee802154_frame_info_t &frame_info) {
