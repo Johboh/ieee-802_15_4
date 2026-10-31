@@ -69,11 +69,11 @@ public:
      * common WiFi channels. 15 is the most safe best. Other good options are 20. 25-26 are good too, but risky
      * compatibiltiy wise.
      */
-    uint8_t channel;
+    uint8_t channel = 15;
     /**
      * Private Area Network Identifier. Should be same between host and node.
      */
-    uint16_t pan_id;
+    uint16_t pan_id = 0x4242;
     /**
      * If the device is going to deep sleep between transmissions, keep the sequence number in an RTC variable and set
      * it in the Configuration upon waking up.
@@ -99,7 +99,7 @@ public:
    * @brief Create a new Ieee802154 object.
    *
    * @param configuration see Configuration.
-   * @param on_message if set, radio will go into receive mode and allow for reciving messages targeted to
+   * @param on_message if set, radio will go into receive mode and allow for receiving messages targeted to
    * this device, or if promiscuous_mode is set to true in the Configuration, also broadcast messages. Can also be set
    * later using receive() call.
    * @param on_data_request callback for when a data request was received. See set/clearPending(). This callback will be
@@ -127,7 +127,7 @@ public:
   /**
    * Sequence number to use in the next outgoing message.
    */
-  uint8_t nextSequenceNumber();
+  uint8_t nextSequenceNumber() const;
   /**
    * Clear the persisted/last known sequence number for a given device/MAC.
    * Useful in case you know that the device is going to forget its sequence number, for example on firmware update.
@@ -295,8 +295,8 @@ public:
 
 private:
   OnMessage _on_message;
-  std::mutex _send_mutex;
-  std::mutex _rx_mutex;
+  mutable std::mutex _send_mutex;
+  mutable std::mutex _rx_mutex;
   bool _initialized = false;
   TaskHandle_t cbTaskHandle;
   Configuration _configuration;

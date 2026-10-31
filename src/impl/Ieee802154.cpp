@@ -484,8 +484,8 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
       .src_addr_mode = 0x3,  // 64-bit
   };
   frame->sequence_number = ++_sequence_number;
-  frame->destination_pan_id = 0xFFFF; // Broadcast
-  frame->destination_mac = 0xFFFF;    // Broadcast
+  frame->destination_pan_id = _configuration.pan_id; // Intra-PAN broadcast
+  frame->destination_mac = 0xFFFF;                   // Broadcast
 
   memcpy(&frame->source_mac, _device_mac_le, sizeof(frame->source_mac));
 
@@ -591,7 +591,7 @@ void Ieee802154::setNumberOfDataFramesRetries(uint8_t number_of_retries) {
   _configuration.data_frame_retries = number_of_retries;
 }
 
-uint8_t Ieee802154::nextSequenceNumber() {
+uint8_t Ieee802154::nextSequenceNumber() const {
   std::lock_guard<std::mutex> lock(_send_mutex);
   return _sequence_number;
 }
