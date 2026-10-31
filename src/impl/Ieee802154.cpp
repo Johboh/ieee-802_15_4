@@ -116,7 +116,7 @@ void Ieee802154::cbTask(void *pvParameters) {
           received_message.fcf.dest_addr_mode == 0x2 && destination_address_short == __UINT16_MAX__;
 
       if (received_message.frame_info.process && is_extended_origin && (is_extended_unicast || is_short_broadcast)) {
-        auto source_address = Ieee802154::macToMac(received_message.src_addr);
+        auto source_address = Ieee802154::macToMacLE(received_message.src_addr);
         if (received_message.fcf.frame_type == 0x03 && received_message.data[0] == 0x04) {
           // We got a MAC command frame with a "Data Request".
           // Was expecting ESP-IDF to set process to false in this case.
@@ -219,6 +219,9 @@ void Ieee802154::initialize(bool initialize_nvs) {
   uint8_t mac[8];
   esp_read_mac(mac, ESP_MAC_IEEE802154);
 
+  // esp_read_mac returns the factory MAC in canonical big-endian (network) order (mac[0] is OUI MSB).
+  // The ESP-IDF 802.15.4 hardware peripheral register expects the address in little-endian order
+  // (matching the over-the-air wire format, LSB in mac[0]). Reverse the array before passing it.
   for (int i = 0; i < 4; i++) {
     uint8_t temp = mac[i];
     mac[i] = mac[7 - i];
@@ -371,7 +374,7 @@ void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t 
 
   uint8_t mac[8];
   ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
-  frame->source_mac = macToMac(mac);
+  memcpy(&frame->source_mac, mac, sizeof(frame->source_mac));
 
   // Copy the payload
   memcpy(frame->payload, payload, payload_size);
@@ -403,7 +406,7 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
 
   uint8_t mac[8];
   ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
-  frame->source_mac = macToMac(mac);
+  memcpy(&frame->source_mac, mac, sizeof(frame->source_mac));
 
   // Copy the payload
   memcpy(frame->payload, payload, payload_size);
@@ -450,19 +453,21 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
 }
 
 void Ieee802154::setPending(uint64_t mac) {
-  // TODO(johboh): Endianess?
+  // Convert canonical 64-bit MAC (e.g. 0xe4b323fffe926d10) to little-endian byte array
+  // (LSB at index 0) as expected by esp_ieee802154_add_pending_addr and OTA frames.
   uint8_t mac_array[8];
   for (int i = 0; i < 8; ++i) {
-    mac_array[i] = (mac >> (56 - i * 8)) & 0xFF;
+    mac_array[i] = (mac >> (i * 8)) & 0xFF;
   }
   ESP_ERROR_CHECK(esp_ieee802154_add_pending_addr(mac_array, false));
 }
 
 void Ieee802154::clearPending(uint64_t mac) {
-  // TODO(johboh): Endianess?
+  // Convert canonical 64-bit MAC (e.g. 0xe4b323fffe926d10) to little-endian byte array
+  // (LSB at index 0) as expected by esp_ieee802154_clear_pending_addr and OTA frames.
   uint8_t mac_array[8];
   for (int i = 0; i < 8; ++i) {
-    mac_array[i] = (mac >> (56 - i * 8)) & 0xFF;
+    mac_array[i] = (mac >> (i * 8)) & 0xFF;
   }
   esp_ieee802154_clear_pending_addr(mac_array, false);
 }
@@ -493,14 +498,16 @@ uint64_t Ieee802154::deviceMacAddress() {
   return Ieee802154::macToMac(mac);
 }
 
-// 8 bytes mac addresses (not 6 as normally)
+// Converts an 8-byte array in canonical big-endian order (e.g. from esp_read_mac)
+// into a canonical 64-bit integer MAC address (mac_addr[0] is MSB).
 uint64_t Ieee802154::macToMac(uint8_t *mac_addr) {
   return ((uint64_t)mac_addr[0] << 56) + ((uint64_t)mac_addr[1] << 48) + ((uint64_t)mac_addr[2] << 40) +
          ((uint64_t)mac_addr[3] << 32) + ((uint64_t)mac_addr[4] << 24) + ((uint64_t)mac_addr[5] << 16) +
          ((uint64_t)mac_addr[6] << 8) + ((uint64_t)mac_addr[7]);
 }
 
-// 8 bytes mac addresses (not 6 as normally), endianess change.
+// Converts an 8-byte array in little-endian wire order (e.g. from 802.15.4 packet OTA)
+// into a canonical 64-bit integer MAC address (mac_addr[7] is MSB, mac_addr[0] is LSB).
 uint64_t Ieee802154::macToMacLE(uint8_t *mac_addr) {
   return ((uint64_t)mac_addr[7] << 56) + ((uint64_t)mac_addr[6] << 48) + ((uint64_t)mac_addr[5] << 40) +
          ((uint64_t)mac_addr[4] << 32) + ((uint64_t)mac_addr[3] << 24) + ((uint64_t)mac_addr[2] << 16) +

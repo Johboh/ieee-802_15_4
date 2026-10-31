@@ -144,8 +144,9 @@ public:
   void setNumberOfDataFramesRetries(uint8_t number_of_retries);
 
   /**
-   * @brief Get the device mac address for this device. This would be the source address in the 802.15.4 frame (or the
-   * destination address for a sender).
+   * @brief Get the device MAC address for this device in canonical 64-bit integer format
+   * (e.g. 0xe4b323fffe926d10ULL where MSB is the first octet/OUI).
+   * Matches Message.source_address / Message.destination_address.
    */
   uint64_t deviceMacAddress();
 
@@ -159,9 +160,10 @@ public:
   /**
    * @brief Send frame to destination.
    *
-   * @param destination_mac big endian
+   * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
+   * Automatically serialized to IEEE 802.15.4 little-endian wire order.
    * @param payload the payload to send.
-   * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
+   * @param message_size the payload size. Maximum payload size 104 bytes without security enabled.
    */
   bool transmit(uint64_t destination_mac, uint8_t *payload, uint8_t message_size);
 
@@ -172,31 +174,40 @@ public:
   };
 
   /**
-   * Send a MAC command with a data request to the reciver, where the reciver will ack with pending or not pending. The
-   * reciver uses setPending()/clearPending() to control the pending reply for an data request.
+   * Send a MAC command with a data request to the receiver, where the receiver will ack with pending or not pending.
+   * The receiver uses setPending()/clearPending() to control the pending reply for a data request.
    *
-   * @param destination_mac big endian
+   * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
    */
   DataRequestResult dataRequest(uint64_t destination_mac);
 
   /**
    * Start receiving and set callback for received messages. If callback already set in constructor, no need to call
-   * again. Call with empty callback to clear/stop reciving frames.
+   * again. Call with empty callback to clear/stop receiving frames.
    */
   void receive(OnMessage on_message);
 
   /**
    * @brief Let transmitter know that there is pending data when transmitter sends a data request.
    * Must be in a receiving mode for this to work.
+   *
+   * @param mac Canonical 64-bit MAC address (e.g. 0xe4b323fffe926d10ULL, as in Message.source_address or
+   * deviceMacAddress()). If you only have the raw 8-byte buffer from esp_read_mac(), convert it first using
+   * macToMac(buffer). Converted internally to the little-endian wire format expected by
+   * esp_ieee802154_add_pending_addr().
    */
   void setPending(uint64_t mac);
   /**
-   * Clear pending bit.
+   * Clear pending bit for a given device MAC address.
+   *
+   * @param mac Canonical 64-bit MAC address (same format as setPending()).
    */
   void clearPending(uint64_t mac);
 
-  // 8 bytes mac addresses (not 6 as normally)
-  // input and output in big endian.
+  /**
+   * Convert an 8-byte MAC address array in big-endian (canonical/network order, e.g. from esp_read_mac)
+   * into a canonical 64-bit integer MAC address (MSB is mac_addr[0]).
+   */
   static uint64_t macToMac(uint8_t *mac_addr);
 
   /**
@@ -231,7 +242,6 @@ private: // static helpers
   static void printFrameControlField(const Ieee802154Specification::FrameControlField &fcf);
   static void printMessageAddresses(const Ieee802154Internal::ReceivedFrame &message);
   static void printFrame(const Ieee802154Internal::ReceivedFrame &frame);
-  static uint64_t toLittleEndian(uint64_t value);
 
 private: // static callbacks
   static void cbTask(void *pvParameters);
