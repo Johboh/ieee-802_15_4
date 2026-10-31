@@ -162,26 +162,52 @@ public:
    */
   bool broadcast(uint8_t *payload, uint8_t payload_size);
   /**
+   * Result of a unicast transmit() operation.
+   */
+  enum class TransmitResult {
+    Success,
+    SuccessWithPending,
+    Failure,
+  };
+
+  /**
    * @brief Send frame to destination.
    *
    * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
    * Automatically serialized to IEEE 802.15.4 little-endian wire order.
    * @param payload the payload to send.
-   * @param message_size the payload size. Maximum payload size 104 bytes without security enabled.
+   * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
+   * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure.
    */
-  bool transmit(uint64_t destination_mac, uint8_t *payload, uint8_t message_size);
+  TransmitResult transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size);
 
+  /**
+   * Result of a dataRequest() poll operation.
+   */
   enum class DataRequestResult {
     NoDataAvailable,
-    DataAvailble,
+    DataAvailable,
     Failure,
   };
 
   /**
-   * Send a MAC command with a data request to the receiver, where the receiver will ack with pending or not pending.
-   * The receiver uses setPending()/clearPending() to control the pending reply for a data request.
+   * @brief Send a MAC Command frame with a Data Request to poll a receiver/coordinator.
+   *
+   * The receiver's hardware automatically responds with an ACK containing the frame_pending bit,
+   * controlled on the receiver side via setPending() / clearPending().
+   *
+   * When to use:
+   * - Use dataRequest() when this device has NO payload to send, but wants to poll the coordinator
+   *   to ask if any messages/commands are queued for it.
+   *
+   * When NOT needed:
+   * - If this device is already sending a data message via transmit(), you do NOT need dataRequest().
+   *   transmit() directly returns TransmitResult::SuccessWithPending if the receiver has data queued for this node,
+   *   saving a redundant round-trip.
    *
    * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
+   * @return DataRequestResult indicating whether data is available, no data is available, or failure (e.g. no
+   * ACK/timeout).
    */
   DataRequestResult dataRequest(uint64_t destination_mac);
 

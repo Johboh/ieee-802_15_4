@@ -316,10 +316,10 @@ bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
   return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
 }
 
-bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size) {
+Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
-    return false;
+    return TransmitResult::Failure;
   }
 
   auto total_length = calculateFrameLength(payload_size);
@@ -335,7 +335,14 @@ bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t pa
     result = transmitInternal(frame_buffer, cca);
   }
 
-  return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
+  switch (result) {
+  case InternalTransmitResult::Success:
+    return TransmitResult::Success;
+  case InternalTransmitResult::SuccessWithPending:
+    return TransmitResult::SuccessWithPending;
+  default:
+    return TransmitResult::Failure;
+  }
 }
 
 Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac) {
@@ -360,7 +367,7 @@ Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac) 
 
   switch (result) {
   case InternalTransmitResult::SuccessWithPending:
-    return DataRequestResult::DataAvailble;
+    return DataRequestResult::DataAvailable;
   case InternalTransmitResult::Success:
     return DataRequestResult::NoDataAvailable;
   default:

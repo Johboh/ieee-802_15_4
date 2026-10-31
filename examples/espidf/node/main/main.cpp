@@ -26,11 +26,17 @@ void transmitTask(void *pvParameters) {
       ApplicationMessage message = {
           .temperature = 22.5,
       };
-      bool result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
-      if (!result) {
-        ESP_LOGE(LOG_TAG, "Transmit error");
-      } else {
+      auto result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
+      switch (result) {
+      case Ieee802154::TransmitResult::Success:
         ESP_LOGI(LOG_TAG, "Transmit OK");
+        break;
+      case Ieee802154::TransmitResult::SuccessWithPending:
+        ESP_LOGI(LOG_TAG, "Transmit OK (pending data waiting on host)");
+        break;
+      case Ieee802154::TransmitResult::Failure:
+        ESP_LOGE(LOG_TAG, "Transmit error");
+        break;
       }
     } else {
       auto result = _ieee802154.dataRequest(destination_address);
@@ -38,7 +44,7 @@ void transmitTask(void *pvParameters) {
       case Ieee802154::DataRequestResult::NoDataAvailable:
         ESP_LOGI(LOG_TAG, "Data Request: No data available");
         break;
-      case Ieee802154::DataRequestResult::DataAvailble:
+      case Ieee802154::DataRequestResult::DataAvailable:
         ESP_LOGI(LOG_TAG, "Data Request: Data available");
         break;
       case Ieee802154::DataRequestResult::Failure:

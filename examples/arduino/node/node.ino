@@ -25,11 +25,17 @@ void loop() {
     ApplicationMessage message = {
         .temperature = 22.5,
     };
-    bool result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
-    if (!result) {
-      Serial.println("Transmit error");
-    } else {
+    auto result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
+    switch (result) {
+    case Ieee802154::TransmitResult::Success:
       Serial.println("Transmit OK");
+      break;
+    case Ieee802154::TransmitResult::SuccessWithPending:
+      Serial.println("Transmit OK (pending data waiting on host)");
+      break;
+    case Ieee802154::TransmitResult::Failure:
+      Serial.println("Transmit error");
+      break;
     }
   } else {
     auto result = _ieee802154.dataRequest(destination_address);
@@ -37,7 +43,7 @@ void loop() {
     case Ieee802154::DataRequestResult::NoDataAvailable:
       Serial.println("Data Request: No data available");
       break;
-    case Ieee802154::DataRequestResult::DataAvailble:
+    case Ieee802154::DataRequestResult::DataAvailable:
       Serial.println("Data Request: Data available");
       break;
     case Ieee802154::DataRequestResult::Failure:
