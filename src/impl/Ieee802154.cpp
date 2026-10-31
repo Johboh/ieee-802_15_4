@@ -173,8 +173,6 @@ void Ieee802154::cbTask(void *pvParameters) {
         }
       }
     }
-
-    vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
 
