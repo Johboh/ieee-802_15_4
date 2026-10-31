@@ -1,18 +1,18 @@
 {
   "name": "ieee-802_15_4",
   "keywords": "esp32, 802.15.4, ieee",
-  "description": "Simplifed version of sending and reciving messages over 802.15.4",
+  "description": "Simplified version of sending and receiving messages over 802.15.4",
   "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
   "authors":
   {
     "name": "Johan Böhlin"
   },
-  "version": "0.5.8",
+  "version": "1.0.0",
   "license": "GPL-3.0-or-later",
   "repository":
   {
     "type": "git",
-    "url": "https://github.com/Johboh/IEEE802154.git"
+    "url": "https://github.com/Johboh/ieee-802_15_4.git"
   },
   "build": {
       "libLDFMode": "deep"

@@ -5,7 +5,7 @@
 [![GitHub release](https://img.shields.io/github/release/Johboh/ieee-802_15_4.svg)](https://github.com/Johboh/ieee-802_15_4/releases)
 [![Clang-format](https://github.com/Johboh/ieee-802_15_4/actions/workflows/clang-format.yaml/badge.svg)](https://github.com/Johboh/ieee-802_15_4)
 
-Arduino (using Arduino IDE) and ESP-IDF (using Espressif IoT Development Framework or PlatformIO) compatible library for sending and reciving messages over 802.15.4 for ESP32-C6 and ESP32-H2 (from ESP-IDF 5.1).
+Arduino (using Arduino IDE) and ESP-IDF (using Espressif IoT Development Framework or PlatformIO) compatible library for sending and receiving messages over 802.15.4 for ESP32-C6 and ESP32-H2 (from ESP-IDF 5.1).
 
 ### Installation
 #### PlatformIO (Arduino or ESP-IDF):
@@ -20,11 +20,8 @@ In your existing `idf_component.yml` or in a new `idf_component.yml` next to you
 ```
 dependencies:
   johboh/ieee-802_15_4:
-    version: ">=0.5.8"
+    version: ">=1.0.0"
 ```
-
-#### Arduino IDE:
-Search for `ieee-802_15_4` by `johboh` in the library manager. See note about version above.
 
 ### Examples
 - [Using Arduino IDE/CLI, host](examples/arduino/host/host.ino)
@@ -34,7 +31,7 @@ Search for `ieee-802_15_4` by `johboh` in the library manager. See note about ve
 
 ### Compatibility
 - As of now, ESP32-C6 and ESP32-H2 are the only ones supporting 802.15.4, but might be more in the future.
-- Requires at last ESP-IDF 5.1.0
-- Can be uses as an Arduino library when using Arduino IDE, or the ESP-IDF framework with Arduino core.
+- Requires at least ESP-IDF 5.1.0
+- Can be used as an Arduino library when using Arduino IDE, or the ESP-IDF framework with Arduino core.
 - Can be used as an ESP-IDF component when using ESP-IDF framework.
-- For PlatformIO, can only be used when using the ESP-IDF framework, as PlatformIO Arduino verion is too old (4.4.7, end of life))
+- For PlatformIO, can only be used when using the ESP-IDF framework, as PlatformIO Arduino version is too old (4.4.7, end of life).

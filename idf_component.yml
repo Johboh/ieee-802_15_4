@@ -1,5 +1,5 @@
-version: "0.5.8"
-description: Simplifed version of sending and reciving messages over 802.15.4
-url: https://github.com/Johboh/IEEE802154
+version: "1.0.0"
+description: Simplified version of sending and receiving messages over 802.15.4
+url: https://github.com/Johboh/ieee-802_15_4
 dependencies:
   idf: ">=5.1.0"
