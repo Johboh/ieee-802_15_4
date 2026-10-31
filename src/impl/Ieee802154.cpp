@@ -112,6 +112,7 @@ Ieee802154::Ieee802154(Configuration configuration, OnMessage on_message, OnData
   _device_mac = Ieee802154::macToMac(mac);
   for (int i = 0; i < 8; i++) {
     _device_mac_le[i] = mac[7 - i];
+    _device_mac_be[i] = mac[i];
   }
 }
 
@@ -402,7 +403,7 @@ bool Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size) {
 }
 
 Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload,
-                                                uint8_t payload_size) {
+                                                uint8_t payload_size, bool legacy_source_mac) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return TransmitResult::Failure;
@@ -414,7 +415,8 @@ Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const 
 
   auto total_length = calculateFrameLength(payload_size);
   uint8_t frame_buffer[total_length];
-  buildFrame(frame_buffer, 0x01 /* frame type = Data Frame */, destination_mac, payload, payload_size);
+  buildFrame(frame_buffer, 0x01 /* frame type = Data Frame */, destination_mac, payload, payload_size,
+             legacy_source_mac);
 
   bool cca = true;
   uint16_t attempt = 0;
@@ -479,7 +481,7 @@ uint8_t Ieee802154::calculateBroadcastFrameLength(uint8_t payload_size) {
 }
 
 void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t destination_mac, const uint8_t *payload,
-                            uint8_t payload_size) {
+                            uint8_t payload_size, bool legacy_source_mac) {
   auto *frame = reinterpret_cast<Ieee802154Specification::Frame *>(frame_buffer);
 
   // Populate the frame fields
@@ -503,7 +505,11 @@ void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t 
   frame->destination_pan_id = _configuration.pan_id;
   frame->destination_mac = destination_mac;
 
-  memcpy(&frame->source_mac, _device_mac_le, sizeof(frame->source_mac));
+  if (legacy_source_mac) {
+    memcpy(&frame->source_mac, _device_mac_be, sizeof(frame->source_mac));
+  } else {
+    memcpy(&frame->source_mac, _device_mac_le, sizeof(frame->source_mac));
+  }
 
   // Copy the payload
   memcpy(frame->payload, payload, payload_size);
