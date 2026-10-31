@@ -17,8 +17,10 @@ Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191}, [](Ieee802154::Message
   ESP_LOGI(LOG_TAG, " -- source MAC: 0x%llx", message.source_address);
   ESP_LOGI(LOG_TAG, " -- destination MAC: 0x%llx", message.destination_address);
   ESP_LOGI(LOG_TAG, " -- payload size: %d", message.payload_size);
-  ApplicationMessage *app = reinterpret_cast<ApplicationMessage *>(message.payload);
-  ESP_LOGI(LOG_TAG, " -- Application.temperature: %f", app->temperature);
+  if (message.payload_size >= sizeof(ApplicationMessage)) {
+    ApplicationMessage *app = reinterpret_cast<ApplicationMessage *>(message.payload);
+    ESP_LOGI(LOG_TAG, " -- Application.temperature: %f", app->temperature);
+  }
 });
 
 extern "C" {
