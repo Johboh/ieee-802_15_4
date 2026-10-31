@@ -66,6 +66,12 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
     transmit_result.pending = fcf->frame_pending;
   }
 
+  // ESP-IDF requires the ACK buffer to be released once handled. Otherwise each acknowledged transmit permanently
+  // consumes one of the RX buffers, and once all are used, every received frame is silently dropped.
+  if (ack != nullptr) {
+    esp_ieee802154_receive_handle_done(ack);
+  }
+
   if (__ieee802154_transmit_queue != nullptr) {
     auto xHigherPriorityTaskWoken = pdFALSE;
     auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
