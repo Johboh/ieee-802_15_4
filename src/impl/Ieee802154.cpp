@@ -286,6 +286,7 @@ void Ieee802154::teardown() {
 }
 
 bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return false;
   }
@@ -307,6 +308,7 @@ bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
 }
 
 bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return false;
   }
@@ -328,6 +330,7 @@ bool Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t pa
 }
 
 Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return DataRequestResult::Failure;
   }
@@ -435,7 +438,7 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
 }
 
 Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, bool cca) {
-  std::scoped_lock lock(_send_mutex);
+  xQueueReset(__ieee802154_transmit_queue);
   ESP_ERROR_CHECK(esp_ieee802154_transmit(frame, cca));
 
   TransmitResult transmit_result;
@@ -518,6 +521,11 @@ void Ieee802154::setChannel(uint8_t channel) {
 
 void Ieee802154::setNumberOfDataFramesRetries(uint8_t number_of_retries) {
   _configuration.data_frame_retries = number_of_retries;
+}
+
+uint8_t Ieee802154::nextSequenceNumber() {
+  std::lock_guard<std::mutex> lock(_send_mutex);
+  return _sequence_number;
 }
 
 uint64_t Ieee802154::deviceMacAddress() {

@@ -124,7 +124,7 @@ public:
   /**
    * Sequence number to use in the next outgoing message.
    */
-  uint8_t nextSequenceNumber() { return _sequence_number; }
+  uint8_t nextSequenceNumber();
   /**
    * Clear the persisted/last known sequence number for a given device/MAC.
    * Useful in case you know that the device is going to forget its sequence number, for example on firmware update.
