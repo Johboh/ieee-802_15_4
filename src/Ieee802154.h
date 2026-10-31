@@ -129,7 +129,7 @@ public:
    * Clear the persisted/last known sequence number for a given device/MAC.
    * Useful in case you know that the device is going to forget its sequence number, for example on firmware update.
    */
-  void clearLastKnownSequenceNumberFor(uint64_t mac) { _last_processed_sequence_number.erase(mac); }
+  void clearLastKnownSequenceNumberFor(uint64_t mac);
 
   /**
    * @brief Set/change the channel.
@@ -266,6 +266,7 @@ public:
 private:
   OnMessage _on_message;
   std::mutex _send_mutex;
+  std::mutex _rx_mutex;
   bool _initialized = false;
   TaskHandle_t cbTaskHandle;
   Configuration _configuration;

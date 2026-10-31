@@ -119,19 +119,44 @@ void Ieee802154::cbTask(void *pvParameters) {
         auto source_address = Ieee802154::macToMacLE(received_message.src_addr);
         if (received_message.fcf.frame_type == 0x03 && received_message.data[0] == 0x04) {
           // We got a MAC command frame with a "Data Request".
-          // Was expecting ESP-IDF to set process to false in this case.
-          if (_this->_on_data_request) {
+          OnDataRequest on_data_request_cb;
+          {
+            std::lock_guard<std::mutex> lock(_this->_rx_mutex);
+            on_data_request_cb = _this->_on_data_request;
+          }
+          if (on_data_request_cb) {
             DataRequest request = {
                 .ieee802154 = *_this,
                 .source_address = source_address,
             };
-            _this->_on_data_request(request);
+            on_data_request_cb(request);
           }
         } else {
-          auto last_processed = _this->_last_processed_sequence_number.find(source_address);
-          if (last_processed == _this->_last_processed_sequence_number.end() ||
-              last_processed->second != received_message.sequence_number) {
-            if (_this->_on_message) {
+          bool is_duplicate = false;
+          {
+            std::lock_guard<std::mutex> lock(_this->_rx_mutex);
+            auto last_processed = _this->_last_processed_sequence_number.find(source_address);
+            if (last_processed != _this->_last_processed_sequence_number.end() &&
+                last_processed->second == received_message.sequence_number) {
+              is_duplicate = true;
+            } else {
+              // Cap to prevent unbounded map growth
+              if (_this->_last_processed_sequence_number.size() >= 128) {
+                _this->_last_processed_sequence_number.erase(_this->_last_processed_sequence_number.begin());
+              }
+              _this->_last_processed_sequence_number[source_address] = received_message.sequence_number;
+            }
+          }
+
+          if (is_duplicate) {
+            ESP_LOGW(Ieee802154Log::TAG, "Already processed this sequence number %d", received_message.sequence_number);
+          } else {
+            OnMessage on_message_cb;
+            {
+              std::lock_guard<std::mutex> lock(_this->_rx_mutex);
+              on_message_cb = _this->_on_message;
+            }
+            if (on_message_cb) {
               Ieee802154::Message message = {
                   .ieee802154 = *_this,
                   .source_address = source_address,
@@ -140,12 +165,9 @@ void Ieee802154::cbTask(void *pvParameters) {
                   .rssi = received_message.frame_info.rssi,
               };
               memcpy(message.payload, received_message.data, message.payload_size);
-              _this->_on_message(message);
+              on_message_cb(message);
             }
-          } else {
-            ESP_LOGW(Ieee802154Log::TAG, "Already processed this sequence number %d", received_message.sequence_number);
           }
-          _this->_last_processed_sequence_number[source_address] = received_message.sequence_number;
         }
       }
     }
@@ -472,7 +494,13 @@ void Ieee802154::clearPending(uint64_t mac) {
   esp_ieee802154_clear_pending_addr(mac_array, false);
 }
 
+void Ieee802154::clearLastKnownSequenceNumberFor(uint64_t mac) {
+  std::lock_guard<std::mutex> lock(_rx_mutex);
+  _last_processed_sequence_number.erase(mac);
+}
+
 void Ieee802154::receive(OnMessage on_message) {
+  std::lock_guard<std::mutex> lock(_rx_mutex);
   if (on_message && !_on_message) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
