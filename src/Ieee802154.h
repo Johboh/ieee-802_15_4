@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Ieee802154Types.h"
+#include <atomic>
 #include <cstdint>
 #include <esp_idf_version.h>
 #include <esp_ieee802154.h>
@@ -118,9 +119,15 @@ public:
    *
    * @param initialize_nvs NVS is needed for radio calibration. Set to true and this function will initialize NVS. False
    * if this is taken care of already.
+   * @return true if initialization succeeded, false otherwise.
    */
-  void initialize(bool initialize_nvs = true);
+  bool initialize(bool initialize_nvs = true);
   void teardown();
+
+  /**
+   * @brief Check whether the radio and dispatcher task are initialized and running.
+   */
+  bool isInitialized() const { return _initialized.load(std::memory_order_acquire); }
 
   uint16_t panId() const { return _configuration.pan_id; }
   uint8_t channel() const { return _configuration.channel; }
@@ -297,8 +304,10 @@ private:
   OnMessage _on_message;
   mutable std::mutex _send_mutex;
   mutable std::mutex _rx_mutex;
-  bool _initialized = false;
-  TaskHandle_t cbTaskHandle;
+  std::atomic<bool> _initialized{false};
+  std::atomic<bool> _running{false};
+  std::atomic<bool> _task_running{false};
+  TaskHandle_t cbTaskHandle = nullptr;
   Configuration _configuration;
   uint8_t _sequence_number = 0;
   OnDataRequest _on_data_request;

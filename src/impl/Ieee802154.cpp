@@ -114,7 +114,7 @@ Ieee802154::~Ieee802154() { teardown(); }
 void Ieee802154::cbTask(void *pvParameters) {
   Ieee802154 *_this = (Ieee802154 *)pvParameters;
 
-  while (_this->_initialized) {
+  while (_this->_running.load(std::memory_order_acquire)) {
     ReceivedFrame received_message;
     if (__ieee802154_receive_queue == nullptr) {
       vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -122,7 +122,7 @@ void Ieee802154::cbTask(void *pvParameters) {
     }
     auto rx_result = xQueueReceive(__ieee802154_receive_queue, &received_message, 100 / portTICK_PERIOD_MS);
     if (rx_result == pdPASS) {
-      if (!_this->_initialized) {
+      if (!_this->_running.load(std::memory_order_acquire)) {
         break;
       }
       // Accept frames for us specifically, or broadcast (16-bit short or 64-bit extended).
@@ -200,6 +200,7 @@ void Ieee802154::cbTask(void *pvParameters) {
     }
   }
   _this->cbTaskHandle = nullptr;
+  _this->_task_running.store(false, std::memory_order_release);
   vTaskDelete(NULL);
 }
 
@@ -233,10 +234,10 @@ void Ieee802154::initializeNvs() {
   ESP_ERROR_CHECK(err);
 }
 
-void Ieee802154::initialize(bool initialize_nvs) {
-  if (_initialized) {
+bool Ieee802154::initialize(bool initialize_nvs) {
+  if (_initialized.load(std::memory_order_acquire)) {
     ESP_LOGE(Ieee802154Log::TAG, "Already initialized.");
-    return;
+    return false;
   }
 
   if (initialize_nvs) {
@@ -287,17 +288,45 @@ void Ieee802154::initialize(bool initialize_nvs) {
     ESP_ERROR_CHECK(esp_ieee802154_receive());
   }
 
-  xTaskCreate(cbTask, "cbTask", 8192, this, 20, &cbTaskHandle);
+  _running.store(true, std::memory_order_release);
+  _task_running.store(true, std::memory_order_release);
+
+  auto task_result = xTaskCreate(cbTask, "cbTask", 8192, this, 20, &cbTaskHandle);
+  if (task_result != pdPASS) {
+    ESP_LOGE(Ieee802154Log::TAG, "Failed to create callback dispatcher task (%d)", (int)task_result);
+    cbTaskHandle = nullptr;
+    _running.store(false, std::memory_order_release);
+    _task_running.store(false, std::memory_order_release);
+    _initialized.store(false, std::memory_order_release);
+
+    ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(false));
+    ESP_ERROR_CHECK(esp_ieee802154_sleep());
+    ESP_ERROR_CHECK(esp_ieee802154_disable());
+#ifdef IEEE802154_USE_CALLBACKS
+    ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_unregister());
+#endif
+    if (__ieee802154_receive_queue != nullptr) {
+      xQueueReset(__ieee802154_receive_queue);
+    }
+    if (__ieee802154_transmit_queue != nullptr) {
+      xQueueReset(__ieee802154_transmit_queue);
+    }
+    return false;
+  }
+
+  _initialized.store(true, std::memory_order_release);
   printState();
-  _initialized = true;
+  return true;
 }
 
 void Ieee802154::teardown() {
   std::lock_guard<std::mutex> send_lock(_send_mutex);
-  std::lock_guard<std::mutex> rx_lock(_rx_mutex);
-  if (!_initialized) {
+  if (!_initialized.load(std::memory_order_acquire)) {
     return;
   }
+
+  _initialized.store(false, std::memory_order_release);
+  _running.store(false, std::memory_order_release);
 
   ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(false));
   ESP_ERROR_CHECK(esp_ieee802154_sleep());
@@ -307,19 +336,28 @@ void Ieee802154::teardown() {
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_unregister());
 #endif
 
-  _initialized = false;
-
-  // Wait briefly for cbTask to finish and self-terminate
-  int wait_ms = 0;
-  while (cbTaskHandle != nullptr && wait_ms < 200) {
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-    wait_ms += 10;
-  }
-  if (cbTaskHandle != nullptr) {
-    vTaskDelete(cbTaskHandle);
-    cbTaskHandle = nullptr;
+  // Unblock cbTask if waiting on the receive queue so it can terminate promptly
+  if (__ieee802154_receive_queue != nullptr) {
+    ReceivedFrame wake_frame{};
+    wake_frame.frame_info.process = false;
+    xQueueSend(__ieee802154_receive_queue, &wake_frame, 0);
   }
 
+  // Wait briefly for cbTask to finish and self-terminate without holding _rx_mutex
+  if (cbTaskHandle != nullptr && xTaskGetCurrentTaskHandle() != cbTaskHandle) {
+    int wait_ms = 0;
+    while (_task_running.load(std::memory_order_acquire) && wait_ms < 200) {
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+      wait_ms += 10;
+    }
+    if (_task_running.load(std::memory_order_acquire) && cbTaskHandle != nullptr) {
+      vTaskDelete(cbTaskHandle);
+      cbTaskHandle = nullptr;
+      _task_running.store(false, std::memory_order_release);
+    }
+  }
+
+  std::lock_guard<std::mutex> rx_lock(_rx_mutex);
   if (__ieee802154_receive_queue != nullptr) {
     xQueueReset(__ieee802154_receive_queue);
   }
