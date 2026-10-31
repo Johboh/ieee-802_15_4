@@ -13,8 +13,8 @@
 
 using namespace Ieee802154Internal;
 
-static QueueHandle_t __ieee802154_receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
-static QueueHandle_t __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TxResult));
+static QueueHandle_t __ieee802154_receive_queue = nullptr;
+static QueueHandle_t __ieee802154_transmit_queue = nullptr;
 
 #ifndef IEEE802154_USE_CALLBACKS
 void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
@@ -42,7 +42,7 @@ void IRAM_ATTR Ieee802154::ieee802154_receive_done_cb(uint8_t *raw_frame, esp_ie
 
   esp_ieee802154_receive_handle_done(raw_frame);
 
-  if (ok) {
+  if (ok && __ieee802154_receive_queue != nullptr) {
     auto xHigherPriorityTaskWoken = pdFALSE;
     auto result = xQueueSendFromISR(__ieee802154_receive_queue, &received_frame, &xHigherPriorityTaskWoken);
     if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
@@ -66,10 +66,12 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
     transmit_result.pending = fcf->frame_pending;
   }
 
-  auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
-  if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
-    portYIELD_FROM_ISR();
+  if (__ieee802154_transmit_queue != nullptr) {
+    auto xHigherPriorityTaskWoken = pdFALSE;
+    auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
+    if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
   }
 }
 
@@ -77,10 +79,12 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_failed_cb(const uint8_t *frame, e
   TxResult transmit_result;
   transmit_result.error = error;
 
-  auto xHigherPriorityTaskWoken = pdFALSE;
-  auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
-  if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
-    portYIELD_FROM_ISR();
+  if (__ieee802154_transmit_queue != nullptr) {
+    auto xHigherPriorityTaskWoken = pdFALSE;
+    auto result = xQueueSendFromISR(__ieee802154_transmit_queue, &transmit_result, &xHigherPriorityTaskWoken);
+    if (result != pdFAIL && xHigherPriorityTaskWoken == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
   }
 }
 
@@ -110,12 +114,19 @@ Ieee802154::~Ieee802154() { teardown(); }
 void Ieee802154::cbTask(void *pvParameters) {
   Ieee802154 *_this = (Ieee802154 *)pvParameters;
 
-  while (1) {
+  while (_this->_initialized) {
     ReceivedFrame received_message;
-    auto rx_result = xQueueReceive(__ieee802154_receive_queue, &received_message, portMAX_DELAY);
+    if (__ieee802154_receive_queue == nullptr) {
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+      continue;
+    }
+    auto rx_result = xQueueReceive(__ieee802154_receive_queue, &received_message, 100 / portTICK_PERIOD_MS);
     if (rx_result == pdPASS) {
-      // Accept frames for us specifically, or for short broadcast.
-      // This is also done in hardware, but this is future preperation for promiscuous mode.
+      if (!_this->_initialized) {
+        break;
+      }
+      // Accept frames for us specifically, or broadcast (16-bit short or 64-bit extended).
+      // This is also done in hardware, but this is future preparation for promiscuous mode.
       auto destination_address = Ieee802154::macToMacLE(received_message.dst_addr);
       auto destination_address_short = Ieee802154::macToShort(received_message.dst_addr);
       auto is_extended_origin = received_message.fcf.src_addr_mode == 0x03;
@@ -123,8 +134,14 @@ void Ieee802154::cbTask(void *pvParameters) {
           received_message.fcf.dest_addr_mode == 0x3 && destination_address == _this->_device_mac;
       auto is_short_broadcast =
           received_message.fcf.dest_addr_mode == 0x2 && destination_address_short == __UINT16_MAX__;
+      auto is_extended_broadcast = received_message.fcf.dest_addr_mode == 0x3 && destination_address == UINT64_MAX;
 
-      if (received_message.frame_info.process && is_extended_origin && (is_extended_unicast || is_short_broadcast)) {
+      if (is_short_broadcast) {
+        destination_address = UINT64_MAX;
+      }
+
+      if (received_message.frame_info.process && is_extended_origin &&
+          (is_extended_unicast || is_short_broadcast || is_extended_broadcast)) {
         auto source_address = Ieee802154::macToMacLE(received_message.src_addr);
         if (received_message.fcf.frame_type == 0x03 && received_message.data_length >= 1 &&
             received_message.data[0] == 0x04) {
@@ -182,6 +199,8 @@ void Ieee802154::cbTask(void *pvParameters) {
       }
     }
   }
+  _this->cbTaskHandle = nullptr;
+  vTaskDelete(NULL);
 }
 
 void Ieee802154::printState() {
@@ -224,8 +243,17 @@ void Ieee802154::initialize(bool initialize_nvs) {
     initializeNvs();
   }
 
-  xQueueReset(__ieee802154_receive_queue);
-  xQueueReset(__ieee802154_transmit_queue);
+  if (__ieee802154_receive_queue == nullptr) {
+    __ieee802154_receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
+  } else {
+    xQueueReset(__ieee802154_receive_queue);
+  }
+
+  if (__ieee802154_transmit_queue == nullptr) {
+    __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TxResult));
+  } else {
+    xQueueReset(__ieee802154_transmit_queue);
+  }
 
 #ifdef IEEE802154_USE_CALLBACKS
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
@@ -279,21 +307,35 @@ void Ieee802154::teardown() {
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_unregister());
 #endif
 
+  _initialized = false;
+
+  // Wait briefly for cbTask to finish and self-terminate
+  int wait_ms = 0;
+  while (cbTaskHandle != nullptr && wait_ms < 200) {
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    wait_ms += 10;
+  }
   if (cbTaskHandle != nullptr) {
     vTaskDelete(cbTaskHandle);
     cbTaskHandle = nullptr;
   }
 
-  xQueueReset(__ieee802154_receive_queue);
-  xQueueReset(__ieee802154_transmit_queue);
+  if (__ieee802154_receive_queue != nullptr) {
+    xQueueReset(__ieee802154_receive_queue);
+  }
+  if (__ieee802154_transmit_queue != nullptr) {
+    xQueueReset(__ieee802154_transmit_queue);
+  }
   _last_processed_sequence_number.clear();
-
-  _initialized = false;
 }
 
 bool Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
+    return false;
+  }
+  if (payload_size > 104 || (payload == nullptr && payload_size > 0)) {
+    ESP_LOGE(Ieee802154Log::TAG, "Invalid payload (size %u > 104 or null pointer)", payload_size);
     return false;
   }
 
@@ -317,6 +359,10 @@ Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const 
                                                 uint8_t payload_size) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
+    return TransmitResult::Failure;
+  }
+  if (payload_size > 104 || (payload == nullptr && payload_size > 0)) {
+    ESP_LOGE(Ieee802154Log::TAG, "Invalid payload (size %u > 104 or null pointer)", payload_size);
     return TransmitResult::Failure;
   }
 
@@ -448,12 +494,16 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
 }
 
 Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, bool cca) {
-  xQueueReset(__ieee802154_transmit_queue);
+  if (__ieee802154_transmit_queue != nullptr) {
+    xQueueReset(__ieee802154_transmit_queue);
+  }
   ESP_ERROR_CHECK(esp_ieee802154_transmit(frame, cca));
 
   TxResult transmit_result;
   // TODO(johboh): move timeout to config
-  auto tx_result = xQueueReceive(__ieee802154_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS);
+  auto tx_result = __ieee802154_transmit_queue != nullptr
+                       ? xQueueReceive(__ieee802154_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS)
+                       : pdFAIL;
   if (tx_result == pdPASS) {
     switch (transmit_result.error) {
     case ESP_IEEE802154_TX_ERR_NONE:
