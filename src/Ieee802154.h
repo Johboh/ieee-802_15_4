@@ -107,6 +107,10 @@ public:
    * called regardless if the sender has any pending data.
    */
   Ieee802154(Configuration configuration, OnMessage on_message = {}, OnDataRequest on_data_request = {});
+  ~Ieee802154();
+
+  Ieee802154(const Ieee802154 &) = delete;
+  Ieee802154 &operator=(const Ieee802154 &) = delete;
 
 public:
   /**

@@ -98,6 +98,8 @@ Ieee802154::Ieee802154(Configuration configuration, OnMessage on_message, OnData
     : _on_message(on_message), _configuration(configuration), _sequence_number(configuration.initial_sequence_number),
       _on_data_request(on_data_request) {}
 
+Ieee802154::~Ieee802154() { teardown(); }
+
 void Ieee802154::cbTask(void *pvParameters) {
   Ieee802154 *_this = (Ieee802154 *)pvParameters;
 
@@ -216,6 +218,9 @@ void Ieee802154::initialize(bool initialize_nvs) {
     initializeNvs();
   }
 
+  xQueueReset(__ieee802154_receive_queue);
+  xQueueReset(__ieee802154_transmit_queue);
+
 #ifdef IEEE802154_USE_CALLBACKS
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
       .rx_done_cb = ieee802154_receive_done_cb,
@@ -265,6 +270,8 @@ void Ieee802154::initialize(bool initialize_nvs) {
 }
 
 void Ieee802154::teardown() {
+  std::lock_guard<std::mutex> send_lock(_send_mutex);
+  std::lock_guard<std::mutex> rx_lock(_rx_mutex);
   if (!_initialized) {
     return;
   }
@@ -281,6 +288,10 @@ void Ieee802154::teardown() {
     vTaskDelete(cbTaskHandle);
     cbTaskHandle = nullptr;
   }
+
+  xQueueReset(__ieee802154_receive_queue);
+  xQueueReset(__ieee802154_transmit_queue);
+  _last_processed_sequence_number.clear();
 
   _initialized = false;
 }
