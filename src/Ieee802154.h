@@ -32,8 +32,11 @@ const char TAG[] = "802.15.4";
  * Allow for sending and receiving payload.
  *
  * Technical Notes:
- * - Security: Hardware AES-CCM encryption/decryption in ESP-IDF requires the 5-byte Auxiliary Security Header
- *   (Security Control, Frame Counter, Key Identifier) following the MHR, along with esp_ieee802154_set_key().
+ * - Security: This library transmits frames without link-layer encryption (security_enabled=0).
+ *   For confidential or authenticated communications, use application-layer encryption (e.g. mbedTLS AES-GCM
+ *   or ChaCha20-Poly1305) to encrypt payloads before transmit() and decrypt inside receive callbacks. The ESP32
+ *   802.15.4 radio hardware only supports hardware-accelerated encryption on transmit; reception must be decrypted
+ *   in software regardless.
  * - Frame Version: Uses IEEE 802.15.4-2006 (frame_version=0b01). IEEE 802.15.4-2015 (frame_version=0b10) uses
  *   altered PAN ID compression semantics and requires ESP_IEEE802154_AUTO_PENDING_ENHANCED for Enhanced ACKs.
  * - Bitrate: The 2.4 GHz IEEE 802.15.4 PHY is standardized strictly at 250 kbps (DSSS O-QPSK at 2 Mchip/s).
@@ -154,7 +157,7 @@ public:
    * @brief Send broadcast frame.
    *
    * @param payload the payload to send.
-   * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
+   * @param payload_size the payload size. Maximum payload size 104 bytes.
    */
   bool broadcast(const uint8_t *payload, uint8_t payload_size);
   /**
@@ -172,7 +175,7 @@ public:
    * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
    * Automatically serialized to IEEE 802.15.4 little-endian wire order.
    * @param payload the payload to send.
-   * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
+   * @param payload_size the payload size. Maximum payload size 104 bytes.
    * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure.
    */
   TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size);
