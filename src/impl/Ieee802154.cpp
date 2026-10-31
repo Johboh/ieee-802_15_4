@@ -14,7 +14,7 @@
 using namespace Ieee802154Internal;
 
 static QueueHandle_t __ieee802154_receive_queue = xQueueCreate(10, sizeof(ReceivedFrame));
-static QueueHandle_t __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TransmitResult));
+static QueueHandle_t __ieee802154_transmit_queue = xQueueCreate(10, sizeof(TxResult));
 
 #ifndef IEEE802154_USE_CALLBACKS
 void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
@@ -55,7 +55,7 @@ void IRAM_ATTR Ieee802154::ieee802154_receive_sfd_done_cb(void) {}
 
 void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, const uint8_t *ack,
                                                        esp_ieee802154_frame_info_t *ack_frame_info) {
-  TransmitResult transmit_result;
+  TxResult transmit_result;
   transmit_result.pending = false;
   transmit_result.error = ESP_IEEE802154_TX_ERR_NONE;
 
@@ -74,7 +74,7 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
 }
 
 void IRAM_ATTR Ieee802154::ieee802154_transmit_failed_cb(const uint8_t *frame, esp_ieee802154_tx_error_t error) {
-  TransmitResult transmit_result;
+  TxResult transmit_result;
   transmit_result.error = error;
 
   auto xHigherPriorityTaskWoken = pdFALSE;
@@ -294,7 +294,7 @@ void Ieee802154::teardown() {
   _initialized = false;
 }
 
-bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
+bool Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return false;
@@ -316,7 +316,8 @@ bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
   return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
 }
 
-Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size) {
+Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload,
+                                                uint8_t payload_size) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return TransmitResult::Failure;
@@ -388,7 +389,7 @@ uint8_t Ieee802154::calculateBroadcastFrameLength(uint8_t payload_size) {
   return total_length;
 }
 
-void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t destination_mac, uint8_t *payload,
+void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t destination_mac, const uint8_t *payload,
                             uint8_t payload_size) {
   auto *frame = reinterpret_cast<Ieee802154Specification::Frame *>(frame_buffer);
 
@@ -421,7 +422,7 @@ void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t 
   memcpy(frame->payload, payload, payload_size);
 }
 
-void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, uint8_t *payload,
+void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, const uint8_t *payload,
                                      uint8_t payload_size) {
   auto *frame = reinterpret_cast<Ieee802154Specification::BroadcastFrame *>(frame_buffer);
 
@@ -457,7 +458,7 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
   xQueueReset(__ieee802154_transmit_queue);
   ESP_ERROR_CHECK(esp_ieee802154_transmit(frame, cca));
 
-  TransmitResult transmit_result;
+  TxResult transmit_result;
   // TODO(johboh): move timeout to config
   auto tx_result = xQueueReceive(__ieee802154_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS);
   if (tx_result == pdPASS) {
@@ -552,7 +553,7 @@ uint64_t Ieee802154::deviceMacAddress() {
 
 // Converts an 8-byte array in canonical big-endian order (e.g. from esp_read_mac)
 // into a canonical 64-bit integer MAC address (mac_addr[0] is MSB).
-uint64_t Ieee802154::macToMac(uint8_t *mac_addr) {
+uint64_t Ieee802154::macToMac(const uint8_t *mac_addr) {
   return ((uint64_t)mac_addr[0] << 56) + ((uint64_t)mac_addr[1] << 48) + ((uint64_t)mac_addr[2] << 40) +
          ((uint64_t)mac_addr[3] << 32) + ((uint64_t)mac_addr[4] << 24) + ((uint64_t)mac_addr[5] << 16) +
          ((uint64_t)mac_addr[6] << 8) + ((uint64_t)mac_addr[7]);
@@ -560,14 +561,16 @@ uint64_t Ieee802154::macToMac(uint8_t *mac_addr) {
 
 // Converts an 8-byte array in little-endian wire order (e.g. from 802.15.4 packet OTA)
 // into a canonical 64-bit integer MAC address (mac_addr[7] is MSB, mac_addr[0] is LSB).
-uint64_t Ieee802154::macToMacLE(uint8_t *mac_addr) {
+uint64_t Ieee802154::macToMacLE(const uint8_t *mac_addr) {
   return ((uint64_t)mac_addr[7] << 56) + ((uint64_t)mac_addr[6] << 48) + ((uint64_t)mac_addr[5] << 40) +
          ((uint64_t)mac_addr[4] << 32) + ((uint64_t)mac_addr[3] << 24) + ((uint64_t)mac_addr[2] << 16) +
          ((uint64_t)mac_addr[1] << 8) + ((uint64_t)mac_addr[0]);
 }
 
 // 8 bytes mac addresses array into short 16-bit address.
-uint16_t Ieee802154::macToShort(uint8_t *mac_addr) { return ((uint16_t)mac_addr[1] << 8) + ((uint16_t)mac_addr[0]); }
+uint16_t Ieee802154::macToShort(const uint8_t *mac_addr) {
+  return ((uint16_t)mac_addr[1] << 8) + ((uint16_t)mac_addr[0]);
+}
 
 bool IRAM_ATTR Ieee802154::parseFrame(const uint8_t *raw_frame, ReceivedFrame *received_frame) {
   if (raw_frame == nullptr || received_frame == nullptr) {

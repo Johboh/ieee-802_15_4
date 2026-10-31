@@ -29,19 +29,15 @@ const char TAG[] = "802.15.4";
  * Class around ESP-IDF 802.15.4 layer.
  * Requires: 5.4.1+, 5.3.3+, 5.2.4+, 5.1.6+
  *
- * Allow for sending and reciving payload.
+ * Allow for sending and receiving payload.
  *
- * Still to do:
- * - Figure out how security works. Can only find a way to transmit encrypted frames, but not decrypt them on the
- * reciver side. Currently, the payload has to be decrypted by the user of this library.
- * - Support frame version 802.15.5-2015 (frame_version=0b10). Currently, setting frame version to be 2015 make frames
- * not be acked by reciver, and only way to recive the is to use promiscuous mode.
- * - If we can get frame version 2015 to work, we could use Enhanched/Enh-Ack, which ESP-IDF has a callback for to
- * generate such but is never called, we could deliver payload like firmware updates and such in the initial message
- * recived from a node, instead of needing the data request frame (where we first send a data frame followed by a data
- * request frame).
- * - Not figured out how to set the bitrate and also by lowering it, allowing for longer range.
- * - TX power can be set to -127 to +127, which doesn't make sense. Not sure what the actual range is.
+ * Technical Notes:
+ * - Security: Hardware AES-CCM encryption/decryption in ESP-IDF requires the 5-byte Auxiliary Security Header
+ *   (Security Control, Frame Counter, Key Identifier) following the MHR, along with esp_ieee802154_set_key().
+ * - Frame Version: Uses IEEE 802.15.4-2006 (frame_version=0b01). IEEE 802.15.4-2015 (frame_version=0b10) uses
+ *   altered PAN ID compression semantics and requires ESP_IEEE802154_AUTO_PENDING_ENHANCED for Enhanced ACKs.
+ * - Bitrate: The 2.4 GHz IEEE 802.15.4 PHY is standardized strictly at 250 kbps (DSSS O-QPSK at 2 Mchip/s).
+ * - TX Power: Expressed in dBm. Typical range is -20 to +20 dBm (ESP32-C6) and -24 to +20 dBm (ESP32-H2).
  */
 class Ieee802154 {
 public:
@@ -90,8 +86,8 @@ public:
      */
     uint8_t data_request_frame_retries = 30;
     /**
-     * @brief Transmit power in dB.
-     * Unknown allowed range.
+     * @brief Transmit power in dBm.
+     * Supported range: -20 to +20 dBm (ESP32-C6) / -24 to +20 dBm (ESP32-H2).
      */
     int8_t tx_power = 20;
   };
@@ -123,8 +119,8 @@ public:
   void initialize(bool initialize_nvs = true);
   void teardown();
 
-  uint16_t panId() { return _configuration.pan_id; }
-  uint16_t channel() { return _configuration.channel; }
+  uint16_t panId() const { return _configuration.pan_id; }
+  uint8_t channel() const { return _configuration.channel; }
   /**
    * Sequence number to use in the next outgoing message.
    */
@@ -160,7 +156,7 @@ public:
    * @param payload the payload to send.
    * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
    */
-  bool broadcast(uint8_t *payload, uint8_t payload_size);
+  bool broadcast(const uint8_t *payload, uint8_t payload_size);
   /**
    * Result of a unicast transmit() operation.
    */
@@ -179,7 +175,7 @@ public:
    * @param payload_size the payload size. Maximum payload size 104 bytes without security enabled.
    * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure.
    */
-  TransmitResult transmit(uint64_t destination_mac, uint8_t *payload, uint8_t payload_size);
+  TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size);
 
   /**
    * Result of a dataRequest() poll operation.
@@ -238,7 +234,7 @@ public:
    * Convert an 8-byte MAC address array in big-endian (canonical/network order, e.g. from esp_read_mac)
    * into a canonical 64-bit integer MAC address (MSB is mac_addr[0]).
    */
-  static uint64_t macToMac(uint8_t *mac_addr);
+  static uint64_t macToMac(const uint8_t *mac_addr);
 
   /**
    * Debug printout of current state.
@@ -250,8 +246,9 @@ private:
   // Including FCS length (2 bytes)
   uint8_t calculateFrameLength(uint8_t payload_size);
   uint8_t calculateBroadcastFrameLength(uint8_t payload_size);
-  void buildBroadcastFrame(uint8_t *frame, uint8_t frame_type, uint8_t *payload, uint8_t payload_size);
-  void buildFrame(uint8_t *frame, uint8_t frame_type, uint64_t destination_mac, uint8_t *payload, uint8_t payload_size);
+  void buildBroadcastFrame(uint8_t *frame, uint8_t frame_type, const uint8_t *payload, uint8_t payload_size);
+  void buildFrame(uint8_t *frame, uint8_t frame_type, uint64_t destination_mac, const uint8_t *payload,
+                  uint8_t payload_size);
 
   enum class InternalTransmitResult {
     Timeout,
@@ -265,8 +262,8 @@ private:
   InternalTransmitResult transmitInternal(uint8_t *frame, bool cca);
 
 private: // static helpers
-  static uint64_t macToMacLE(uint8_t *mac_addr);
-  static uint16_t macToShort(uint8_t *mac_addr);
+  static uint64_t macToMacLE(const uint8_t *mac_addr);
+  static uint16_t macToShort(const uint8_t *mac_addr);
   static bool parseFrame(const uint8_t *raw_frame, Ieee802154Internal::ReceivedFrame *received_frame);
   static void printFrameInfo(esp_ieee802154_frame_info_t &frame_info);
   static void printFrameControlField(const Ieee802154Specification::FrameControlField &fcf);

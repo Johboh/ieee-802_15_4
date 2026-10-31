@@ -65,7 +65,7 @@ struct ReceivedFrame {
   uint8_t data_length = 0;
 };
 
-struct TransmitResult {
+struct TxResult {
   bool pending = false;
   esp_ieee802154_tx_error_t error;
 };
