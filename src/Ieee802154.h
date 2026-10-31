@@ -208,6 +208,7 @@ private:
   void initializeNvs();
   // Including FCS length (2 bytes)
   uint8_t calculateFrameLength(uint8_t payload_size);
+  uint8_t calculateBroadcastFrameLength(uint8_t payload_size);
   void buildBroadcastFrame(uint8_t *frame, uint8_t frame_type, uint8_t *payload, uint8_t payload_size);
   void buildFrame(uint8_t *frame, uint8_t frame_type, uint64_t destination_mac, uint8_t *payload, uint8_t payload_size);
 

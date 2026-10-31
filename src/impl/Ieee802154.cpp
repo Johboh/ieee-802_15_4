@@ -265,7 +265,7 @@ bool Ieee802154::broadcast(uint8_t *payload, uint8_t payload_size) {
     return false;
   }
 
-  auto total_length = calculateFrameLength(payload_size);
+  auto total_length = calculateBroadcastFrameLength(payload_size);
   uint8_t frame_buffer[total_length];
   buildBroadcastFrame(frame_buffer, 0x01 /* frame type = Data Frame */, payload, payload_size);
 
@@ -338,6 +338,12 @@ uint8_t Ieee802154::calculateFrameLength(uint8_t payload_size) {
   return total_length;
 }
 
+uint8_t Ieee802154::calculateBroadcastFrameLength(uint8_t payload_size) {
+  uint8_t mac_hdr_length = sizeof(Ieee802154Specification::BroadcastFrame);
+  uint8_t total_length = mac_hdr_length + payload_size + 2; // +2 for FCS
+  return total_length;
+}
+
 void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t destination_mac, uint8_t *payload,
                             uint8_t payload_size) {
   auto *frame = reinterpret_cast<Ieee802154Specification::Frame *>(frame_buffer);
@@ -376,7 +382,7 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
   auto *frame = reinterpret_cast<Ieee802154Specification::BroadcastFrame *>(frame_buffer);
 
   // Populate the frame fields
-  auto total_length = calculateFrameLength(payload_size);
+  auto total_length = calculateBroadcastFrameLength(payload_size);
   frame->length = total_length - 1; // Exclude the length field itself
   frame->fcf = (Ieee802154Specification::FrameControlField){
       .frame_type = frame_type,
