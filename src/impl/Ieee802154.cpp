@@ -270,7 +270,9 @@ bool Ieee802154::initialize(bool initialize_nvs) {
 
   ESP_ERROR_CHECK(esp_ieee802154_enable());
 
-  setChannel(_configuration.channel);
+  // Apply the channel directly: setChannel() is a no-op until _initialized is set at the end of this function.
+  _configuration.channel = std::clamp(_configuration.channel, (uint8_t)11, (uint8_t)26);
+  ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
 
   ESP_ERROR_CHECK(esp_ieee802154_set_panid(_configuration.pan_id));
 
