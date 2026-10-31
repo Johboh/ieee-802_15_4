@@ -402,8 +402,8 @@ bool Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size) {
   return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
 }
 
-Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload,
-                                                uint8_t payload_size, bool legacy_source_mac) {
+Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size,
+                                                bool legacy_source_mac) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
     return TransmitResult::Failure;
