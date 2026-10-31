@@ -96,7 +96,14 @@ esp_err_t IRAM_ATTR Ieee802154::ieee802154_enh_ack_generator_cb(uint8_t *frame, 
 
 Ieee802154::Ieee802154(Configuration configuration, OnMessage on_message, OnDataRequest on_data_request)
     : _on_message(on_message), _configuration(configuration), _sequence_number(configuration.initial_sequence_number),
-      _on_data_request(on_data_request) {}
+      _on_data_request(on_data_request) {
+  uint8_t mac[8];
+  esp_read_mac(mac, ESP_MAC_IEEE802154);
+  _device_mac = Ieee802154::macToMac(mac);
+  for (int i = 0; i < 8; i++) {
+    _device_mac_le[i] = mac[7 - i];
+  }
+}
 
 Ieee802154::~Ieee802154() { teardown(); }
 
@@ -113,13 +120,14 @@ void Ieee802154::cbTask(void *pvParameters) {
       auto destination_address_short = Ieee802154::macToShort(received_message.dst_addr);
       auto is_extended_origin = received_message.fcf.src_addr_mode == 0x03;
       auto is_extended_unicast =
-          received_message.fcf.dest_addr_mode == 0x3 && destination_address == _this->deviceMacAddress();
+          received_message.fcf.dest_addr_mode == 0x3 && destination_address == _this->_device_mac;
       auto is_short_broadcast =
           received_message.fcf.dest_addr_mode == 0x2 && destination_address_short == __UINT16_MAX__;
 
       if (received_message.frame_info.process && is_extended_origin && (is_extended_unicast || is_short_broadcast)) {
         auto source_address = Ieee802154::macToMacLE(received_message.src_addr);
-        if (received_message.fcf.frame_type == 0x03 && received_message.data[0] == 0x04) {
+        if (received_message.fcf.frame_type == 0x03 && received_message.data_length >= 1 &&
+            received_message.data[0] == 0x04) {
           // We got a MAC command frame with a "Data Request".
           OnDataRequest on_data_request_cb;
           {
@@ -241,23 +249,12 @@ void Ieee802154::initialize(bool initialize_nvs) {
 
   ESP_ERROR_CHECK(esp_ieee802154_set_txpower(_configuration.tx_power));
 
-  uint8_t mac[8];
-  esp_read_mac(mac, ESP_MAC_IEEE802154);
-
-  // esp_read_mac returns the factory MAC in canonical big-endian (network) order (mac[0] is OUI MSB).
-  // The ESP-IDF 802.15.4 hardware peripheral register expects the address in little-endian order
-  // (matching the over-the-air wire format, LSB in mac[0]). Reverse the array before passing it.
-  for (int i = 0; i < 4; i++) {
-    uint8_t temp = mac[i];
-    mac[i] = mac[7 - i];
-    mac[7 - i] = temp;
-  }
-  ESP_ERROR_CHECK(esp_ieee802154_set_extended_address(mac));
+  ESP_ERROR_CHECK(esp_ieee802154_set_extended_address(_device_mac_le));
   // TODO(johboh): Potentially support these promiscuous and coordinator.
   ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(false));
   ESP_ERROR_CHECK(esp_ieee802154_set_coordinator(false));
 
-  if (_on_message) {
+  if (_on_message || _on_data_request) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
   }
@@ -414,9 +411,7 @@ void Ieee802154::buildFrame(uint8_t *frame_buffer, uint8_t frame_type, uint64_t 
   frame->destination_pan_id = _configuration.pan_id;
   frame->destination_mac = destination_mac;
 
-  uint8_t mac[8];
-  ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
-  memcpy(&frame->source_mac, mac, sizeof(frame->source_mac));
+  memcpy(&frame->source_mac, _device_mac_le, sizeof(frame->source_mac));
 
   // Copy the payload
   memcpy(frame->payload, payload, payload_size);
@@ -446,9 +441,7 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
   frame->destination_pan_id = 0xFFFF; // Broadcast
   frame->destination_mac = 0xFFFF;    // Broadcast
 
-  uint8_t mac[8];
-  ESP_ERROR_CHECK(esp_ieee802154_get_extended_address(mac));
-  memcpy(&frame->source_mac, mac, sizeof(frame->source_mac));
+  memcpy(&frame->source_mac, _device_mac_le, sizeof(frame->source_mac));
 
   // Copy the payload
   memcpy(frame->payload, payload, payload_size);
@@ -521,22 +514,30 @@ void Ieee802154::clearLastKnownSequenceNumberFor(uint64_t mac) {
 
 void Ieee802154::receive(OnMessage on_message) {
   std::lock_guard<std::mutex> lock(_rx_mutex);
-  if (on_message && !_on_message) {
-    ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
-    ESP_ERROR_CHECK(esp_ieee802154_receive());
-  } else if (!on_message && _on_message) {
-    ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(false));
-    ESP_ERROR_CHECK(esp_ieee802154_sleep());
+  if (_initialized) {
+    bool had_rx = (_on_message != nullptr || _on_data_request != nullptr);
+    bool want_rx = (on_message != nullptr || _on_data_request != nullptr);
+    if (want_rx && !had_rx) {
+      ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
+      ESP_ERROR_CHECK(esp_ieee802154_receive());
+    } else if (!want_rx && had_rx) {
+      ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(false));
+      ESP_ERROR_CHECK(esp_ieee802154_sleep());
+    }
   }
   _on_message = on_message;
 }
 
 void Ieee802154::setChannel(uint8_t channel) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
   _configuration.channel = std::clamp(channel, (uint8_t)11, (uint8_t)26);
-  ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
+  if (_initialized) {
+    ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
+  }
 }
 
 void Ieee802154::setNumberOfDataFramesRetries(uint8_t number_of_retries) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
   _configuration.data_frame_retries = number_of_retries;
 }
 
@@ -545,11 +546,7 @@ uint8_t Ieee802154::nextSequenceNumber() {
   return _sequence_number;
 }
 
-uint64_t Ieee802154::deviceMacAddress() {
-  uint8_t mac[8];
-  esp_read_mac(mac, ESP_MAC_IEEE802154);
-  return Ieee802154::macToMac(mac);
-}
+uint64_t Ieee802154::deviceMacAddress() const { return _device_mac; }
 
 // Converts an 8-byte array in canonical big-endian order (e.g. from esp_read_mac)
 // into a canonical 64-bit integer MAC address (mac_addr[0] is MSB).

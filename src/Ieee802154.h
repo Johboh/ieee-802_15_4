@@ -151,7 +151,7 @@ public:
    * (e.g. 0xe4b323fffe926d10ULL where MSB is the first octet/OUI).
    * Matches Message.source_address / Message.destination_address.
    */
-  uint64_t deviceMacAddress();
+  uint64_t deviceMacAddress() const;
 
   /**
    * @brief Send broadcast frame.
@@ -303,4 +303,6 @@ private:
   uint8_t _sequence_number = 0;
   OnDataRequest _on_data_request;
   std::map<uint64_t, uint8_t> _last_processed_sequence_number;
+  uint64_t _device_mac = 0;
+  uint8_t _device_mac_le[8] = {0};
 };
