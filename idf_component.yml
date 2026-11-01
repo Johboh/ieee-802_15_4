@@ -1,4 +1,4 @@
-version: "1.0.2"
+version: "1.0.3"
 description: Simplified version of sending and receiving messages over 802.15.4
 url: https://github.com/Johboh/ieee-802_15_4
 dependencies:
