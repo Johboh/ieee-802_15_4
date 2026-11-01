@@ -38,8 +38,10 @@ const char TAG[] = "802.15.4";
  *   or ChaCha20-Poly1305) to encrypt payloads before transmit() and decrypt inside receive callbacks. The ESP32
  *   802.15.4 radio hardware only supports hardware-accelerated encryption on transmit; reception must be decrypted
  *   in software regardless.
- * - Frame Version: Uses IEEE 802.15.4-2006 (frame_version=0b01). IEEE 802.15.4-2015 (frame_version=0b10) uses
- *   altered PAN ID compression semantics and requires ESP_IEEE802154_AUTO_PENDING_ENHANCED for Enhanced ACKs.
+ * - Frame Version: Uses IEEE 802.15.4-2006 (frame_version=0b01).
+ * - Auto Pending: Configured with ESP_IEEE802154_AUTO_PENDING_ENHANCED so hardware auto-ACK sets the frame_pending
+ *   bit in all ACK frames (including Data frame ACKs) when the peer MAC matches an entry in the pending table.
+ *   This enables sleeping nodes to conditionally poll via dataRequest() only when pending data is waiting.
  * - Bitrate: The 2.4 GHz IEEE 802.15.4 PHY is standardized strictly at 250 kbps (DSSS O-QPSK at 2 Mchip/s).
  * - TX Power: Expressed in dBm. Typical range is -20 to +20 dBm (ESP32-C6) and -24 to +20 dBm (ESP32-H2).
  */

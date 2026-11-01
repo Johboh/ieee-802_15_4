@@ -283,7 +283,7 @@ bool Ieee802154::initialize(bool initialize_nvs) {
 
   ESP_ERROR_CHECK(esp_ieee802154_set_panid(_configuration.pan_id));
 
-  ESP_ERROR_CHECK(esp_ieee802154_set_pending_mode(ESP_IEEE802154_AUTO_PENDING_ENABLE));
+  ESP_ERROR_CHECK(esp_ieee802154_set_pending_mode(ESP_IEEE802154_AUTO_PENDING_ENHANCED));
 
   ESP_ERROR_CHECK(esp_ieee802154_set_txpower(_configuration.tx_power));
 
@@ -596,7 +596,10 @@ void Ieee802154::setPending(uint64_t mac) {
   for (int i = 0; i < 8; ++i) {
     mac_array[i] = (mac >> (i * 8)) & 0xFF;
   }
-  ESP_ERROR_CHECK(esp_ieee802154_add_pending_addr(mac_array, false));
+  esp_err_t err = esp_ieee802154_add_pending_addr(mac_array, false);
+  if (err != ESP_OK) {
+    ESP_LOGE(Ieee802154Log::TAG, "Failed to add pending address: %s", esp_err_to_name(err));
+  }
 }
 
 void Ieee802154::clearPending(uint64_t mac) {
