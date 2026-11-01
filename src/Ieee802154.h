@@ -187,8 +187,7 @@ public:
    * @param payload_size the payload size. Maximum payload size 104 bytes.
    * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure.
    */
-  TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size,
-                          bool legacy_source_mac = false);
+  TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size);
 
   /**
    * Result of a dataRequest() poll operation.
@@ -261,7 +260,7 @@ private:
   uint8_t calculateBroadcastFrameLength(uint8_t payload_size);
   void buildBroadcastFrame(uint8_t *frame, uint8_t frame_type, const uint8_t *payload, uint8_t payload_size);
   void buildFrame(uint8_t *frame, uint8_t frame_type, uint64_t destination_mac, const uint8_t *payload,
-                  uint8_t payload_size, bool legacy_source_mac = false);
+                  uint8_t payload_size);
 
   enum class InternalTransmitResult {
     Timeout,
@@ -317,5 +316,4 @@ private:
   std::map<uint64_t, uint8_t> _last_processed_sequence_number;
   uint64_t _device_mac = 0;
   uint8_t _device_mac_le[8] = {0};
-  uint8_t _device_mac_be[8] = {0};
 };
