@@ -19,6 +19,7 @@ Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191}, [](Ieee802154::Message
   ESP_LOGI(LOG_TAG, "Got Message");
   ESP_LOGI(LOG_TAG, " -- source MAC: 0x%llx", message.source_address);
   ESP_LOGI(LOG_TAG, " -- destination MAC: 0x%llx", message.destination_address);
+  ESP_LOGI(LOG_TAG, " -- RSSI: %d, LQI: %u", message.rssi, message.lqi);
   ESP_LOGI(LOG_TAG, " -- payload size: %d", message.payload_size);
   if (message.payload_size >= sizeof(ApplicationMessage)) {
     ApplicationMessage *app = reinterpret_cast<ApplicationMessage *>(message.payload);

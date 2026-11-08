@@ -64,14 +64,17 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_done_cb(const uint8_t *frame, con
 
   // An immediate ACK frame in 802.15.4 is 5 bytes: length (1), FCF (2), sequence number (1), FCS (2).
   // The frame_pending bit is bit 4 of the first FCF byte (ack[1]).
-  if (ack != nullptr && ack[0] >= 3) {
-    auto *fcf = reinterpret_cast<const Ieee802154Specification::FrameControlField *>(ack + 1);
-    transmit_result.pending = fcf->frame_pending;
-  }
-
   // ESP-IDF requires the ACK buffer to be released once handled. Otherwise each acknowledged transmit permanently
   // consumes one of the RX buffers, and once all are used, every received frame is silently dropped.
   if (ack != nullptr) {
+    if (ack[0] >= 3) {
+      auto *fcf = reinterpret_cast<const Ieee802154Specification::FrameControlField *>(ack + 1);
+      transmit_result.pending = fcf->frame_pending;
+    }
+    if (ack_frame_info != nullptr) {
+      transmit_result.ack_rssi = ack_frame_info->rssi;
+      transmit_result.ack_lqi = ack_frame_info->lqi;
+    }
     esp_ieee802154_receive_handle_done(ack);
   }
 
@@ -164,6 +167,8 @@ void Ieee802154::cbTask(void *pvParameters) {
             DataRequest request = {
                 .ieee802154 = *_this,
                 .source_address = source_address,
+                .rssi = received_message.frame_info.rssi,
+                .lqi = received_message.frame_info.lqi,
             };
             on_data_request_cb(request);
           }
@@ -199,6 +204,7 @@ void Ieee802154::cbTask(void *pvParameters) {
                   .destination_address = destination_address,
                   .payload_size = std::min(received_message.data_length, (uint8_t)sizeof(message.payload)),
                   .rssi = received_message.frame_info.rssi,
+                  .lqi = received_message.frame_info.lqi,
               };
               memcpy(message.payload, received_message.data, message.payload_size);
               on_message_cb(message);
@@ -378,70 +384,57 @@ void Ieee802154::teardown() {
   _last_processed_sequence_number.clear();
 }
 
-bool Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size) {
+Ieee802154::BroadcastResult Ieee802154::broadcast(const uint8_t *payload, uint8_t payload_size, uint8_t retries) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
-    return false;
+    return {BroadcastResult::Failure};
   }
   if (payload_size > 104 || (payload == nullptr && payload_size > 0)) {
     ESP_LOGE(Ieee802154Log::TAG, "Invalid payload (size %u > 104 or null pointer)", payload_size);
-    return false;
+    return {BroadcastResult::Failure};
   }
 
   auto total_length = calculateBroadcastFrameLength(payload_size);
   uint8_t frame_buffer[total_length];
   buildBroadcastFrame(frame_buffer, 0x01 /* frame type = Data Frame */, payload, payload_size);
 
-  bool cca = true;
-  uint16_t attempt = 0;
-  auto result = transmitInternal(frame_buffer, cca);
-  while (attempt++ < _configuration.data_frame_retries &&
-         (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending)) {
-    vTaskDelay((10 + attempt) / portTICK_PERIOD_MS);
-    result = transmitInternal(frame_buffer, cca);
-  }
-
-  return result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
+  TransmitStatus status{};
+  auto result = transmitWithRetries(frame_buffer, true /* cca */, retries, &status);
+  bool ok = result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending;
+  return {ok ? BroadcastResult::Success : BroadcastResult::Failure, status};
 }
 
-Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload,
-                                                uint8_t payload_size) {
+Ieee802154::TransmitResult Ieee802154::transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size,
+                                                uint8_t retries) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
-    return TransmitResult::Failure;
+    return {TransmitResult::Failure};
   }
   if (payload_size > 104 || (payload == nullptr && payload_size > 0)) {
     ESP_LOGE(Ieee802154Log::TAG, "Invalid payload (size %u > 104 or null pointer)", payload_size);
-    return TransmitResult::Failure;
+    return {TransmitResult::Failure};
   }
 
   auto total_length = calculateFrameLength(payload_size);
   uint8_t frame_buffer[total_length];
   buildFrame(frame_buffer, 0x01 /* frame type = Data Frame */, destination_mac, payload, payload_size);
 
-  bool cca = true;
-  uint16_t attempt = 0;
-  auto result = transmitInternal(frame_buffer, cca);
-  while (attempt++ < _configuration.data_frame_retries &&
-         (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending)) {
-    vTaskDelay((10 + attempt) / portTICK_PERIOD_MS);
-    result = transmitInternal(frame_buffer, cca);
-  }
-
+  TransmitStatus status{};
+  auto result = transmitWithRetries(frame_buffer, true /* cca */, retries, &status);
   switch (result) {
   case InternalTransmitResult::Success:
-    return TransmitResult::Success;
+    return {TransmitResult::Success, status};
   case InternalTransmitResult::SuccessWithPending:
-    return TransmitResult::SuccessWithPending;
+    return {TransmitResult::SuccessWithPending, status};
   default:
-    return TransmitResult::Failure;
+    return {TransmitResult::Failure, status};
   }
 }
 
-Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac) {
+Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac, uint8_t retries) {
   std::lock_guard<std::mutex> lock(_send_mutex);
   if (!_initialized) {
-    return DataRequestResult::Failure;
+    return {DataRequestResult::Failure};
   }
 
   auto total_length = calculateFrameLength(1);
@@ -449,24 +442,17 @@ Ieee802154::DataRequestResult Ieee802154::dataRequest(uint64_t destination_mac) 
   uint8_t payload[1] = {0x04}; // data request
   buildFrame(frame_buffer, 0x03 /* frame type = MAC Command Frame */, destination_mac, payload, 1);
 
-  bool cca = true;
-  uint16_t attempt = 0;
-  auto result = transmitInternal(frame_buffer, cca);
-  while (attempt++ < _configuration.data_request_frame_retries &&
-         (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending)) {
-    vTaskDelay((10 + attempt) / portTICK_PERIOD_MS);
-    result = transmitInternal(frame_buffer, cca);
-  }
-
+  TransmitStatus status{};
+  auto result = transmitWithRetries(frame_buffer, true /* cca */, retries, &status);
   switch (result) {
   case InternalTransmitResult::SuccessWithPending:
-    return DataRequestResult::DataAvailable;
+    return {DataRequestResult::DataAvailable, status};
   case InternalTransmitResult::Success:
-    return DataRequestResult::NoDataAvailable;
+    return {DataRequestResult::NoDataAvailable, status};
   default:
     break;
   }
-  return DataRequestResult::Failure;
+  return {DataRequestResult::Failure, status};
 }
 
 uint8_t Ieee802154::calculateFrameLength(uint8_t payload_size) {
@@ -542,7 +528,38 @@ void Ieee802154::buildBroadcastFrame(uint8_t *frame_buffer, uint8_t frame_type, 
   memcpy(frame->payload, payload, payload_size);
 }
 
-Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, bool cca) {
+Ieee802154::InternalTransmitResult Ieee802154::transmitWithRetries(uint8_t *frame, bool cca, uint8_t max_retries,
+                                                                   TransmitStatus *out_status) {
+  TransmitStatus status{};
+  TxResult tx_result{};
+  uint16_t attempts = 1;
+  uint16_t errors = 0;
+
+  auto result = transmitInternal(frame, cca, &tx_result);
+  while (result != InternalTransmitResult::Success && result != InternalTransmitResult::SuccessWithPending) {
+    errors++;
+    status.last_error = tx_result.error;
+    if (attempts > max_retries) {
+      break;
+    }
+    vTaskDelay((10 + attempts) / portTICK_PERIOD_MS);
+    attempts++;
+    result = transmitInternal(frame, cca, &tx_result);
+  }
+
+  status.attempts = attempts;
+  status.errors = errors;
+  if (result == InternalTransmitResult::Success || result == InternalTransmitResult::SuccessWithPending) {
+    status.ack_rssi = tx_result.ack_rssi;
+    status.ack_lqi = tx_result.ack_lqi;
+  }
+  if (out_status != nullptr) {
+    *out_status = status;
+  }
+  return result;
+}
+
+Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, bool cca, TxResult *out_tx_result) {
   if (__ieee802154_transmit_queue != nullptr) {
     xQueueReset(__ieee802154_transmit_queue);
   }
@@ -554,6 +571,9 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
                        ? xQueueReceive(__ieee802154_transmit_queue, &transmit_result, 1000 / portTICK_PERIOD_MS)
                        : pdFAIL;
   if (tx_result == pdPASS) {
+    if (out_tx_result != nullptr) {
+      *out_tx_result = transmit_result;
+    }
     switch (transmit_result.error) {
     case ESP_IEEE802154_TX_ERR_NONE:
       return transmit_result.pending ? InternalTransmitResult::SuccessWithPending : InternalTransmitResult::Success;
@@ -579,6 +599,9 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
       break;
     }
   } else {
+    if (out_tx_result != nullptr) {
+      out_tx_result->error = ESP_IEEE802154_TX_ERR_ABORT;
+    }
     ESP_LOGE(Ieee802154Log::TAG, "Transmit Result: timeout");
     return InternalTransmitResult::Timeout; // Timeout.
   }
@@ -631,16 +654,19 @@ void Ieee802154::receive(OnMessage on_message) {
 }
 
 void Ieee802154::setChannel(uint8_t channel) {
-  std::lock_guard<std::mutex> lock(_send_mutex);
+  std::lock_guard<std::mutex> send_lock(_send_mutex);
+  std::lock_guard<std::mutex> rx_lock(_rx_mutex);
   _configuration.channel = std::clamp(channel, (uint8_t)11, (uint8_t)26);
   if (_initialized) {
     ESP_ERROR_CHECK(esp_ieee802154_set_channel(_configuration.channel));
+    // esp_ieee802154_set_channel() only updates the cached PIB state and sets a pending flag;
+    // it does not write the new frequency to hardware until rx_init() or tx_init() runs.
+    // If receiving is active, call esp_ieee802154_receive() so the channel switch is applied immediately.
+    if (_on_message != nullptr || _on_data_request != nullptr ||
+        esp_ieee802154_get_state() == ESP_IEEE802154_RADIO_RECEIVE) {
+      ESP_ERROR_CHECK(esp_ieee802154_receive());
+    }
   }
-}
-
-void Ieee802154::setNumberOfDataFramesRetries(uint8_t number_of_retries) {
-  std::lock_guard<std::mutex> lock(_send_mutex);
-  _configuration.data_frame_retries = number_of_retries;
 }
 
 uint8_t Ieee802154::nextSequenceNumber() const {

@@ -13,7 +13,6 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <string>
 
 namespace Ieee802154Log {
@@ -58,6 +57,7 @@ public:
     uint8_t payload[127] = {0};
     uint8_t payload_size = 0;
     int8_t rssi = 0;
+    uint8_t lqi = 0;
   };
 
   typedef std::function<void(Ieee802154::Message message)> OnMessage;
@@ -65,6 +65,8 @@ public:
   struct DataRequest {
     Ieee802154 &ieee802154;
     uint64_t source_address = 0;
+    int8_t rssi = 0;
+    uint8_t lqi = 0;
   };
 
   typedef std::function<void(Ieee802154::DataRequest request)> OnDataRequest;
@@ -86,14 +88,6 @@ public:
      * Use [nextSequenceNumber] to retreive the next sequence number (to persist upon sleep).
      */
     uint8_t initial_sequence_number = 0;
-    /**
-     * How many times to try resending a data frame on failure (no ack, busy cca etc)
-     */
-    uint8_t data_frame_retries = 30;
-    /**
-     * How many times to try resending a data request frame on failure (no ack, busy cca etc)
-     */
-    uint8_t data_request_frame_retries = 30;
     /**
      * @brief Transmit power in dBm.
      * Supported range: -20 to +20 dBm (ESP32-C6) / -24 to +20 dBm (ESP32-H2).
@@ -147,16 +141,11 @@ public:
   void clearLastKnownSequenceNumberFor(uint64_t mac);
 
   /**
-   * @brief Set/change the channel.
+   * @brief Set/change the channel and apply it immediately to the radio hardware.
    *
    * @param channel channel number between 11 and 26.
    */
   void setChannel(uint8_t channel);
-
-  /**
-   * Set how many times to try resending a data frame on failure (no ack, busy cca etc)
-   */
-  void setNumberOfDataFramesRetries(uint8_t number_of_retries);
 
   /**
    * @brief Get the device MAC address for this device in canonical 64-bit integer format
@@ -166,19 +155,71 @@ public:
   uint64_t deviceMacAddress() const;
 
   /**
+   * Diagnostics and statistics for a transmission operation.
+   */
+  struct TransmitStatus {
+    uint16_t attempts = 0;
+    uint16_t errors = 0;
+    esp_ieee802154_tx_error_t last_error = ESP_IEEE802154_TX_ERR_NONE;
+    int8_t ack_rssi = 0;
+    uint8_t ack_lqi = 0;
+  };
+
+  /**
+   * Result of a broadcast() operation, including transmit status.
+   */
+  struct BroadcastResult : TransmitStatus {
+    enum class Status {
+      Success,
+      Failure,
+    };
+    static constexpr Status Success = Status::Success;
+    static constexpr Status Failure = Status::Failure;
+
+    Status status = Status::Failure;
+
+    constexpr BroadcastResult() = default;
+    constexpr BroadcastResult(Status status) : TransmitStatus(), status(status) {}
+    constexpr BroadcastResult(Status status, const TransmitStatus &tx_status)
+        : TransmitStatus(tx_status), status(status) {}
+
+    constexpr operator bool() const { return status == Status::Success; }
+  };
+
+  /**
    * @brief Send broadcast frame.
    *
    * @param payload the payload to send.
    * @param payload_size the payload size. Maximum payload size 104 bytes.
+   * @param retries how many times to try resending on failure (busy CCA, abort, etc.). Defaults to 30.
+   * @return BroadcastResult containing status, attempts, errors, and last_error. Converts implicitly to bool.
    */
-  bool broadcast(const uint8_t *payload, uint8_t payload_size);
+  BroadcastResult broadcast(const uint8_t *payload, uint8_t payload_size, uint8_t retries = 30);
+
   /**
-   * Result of a unicast transmit() operation.
+   * Result of a unicast transmit() operation, including transmit status and ACK RSSI/LQI.
    */
-  enum class TransmitResult {
-    Success,
-    SuccessWithPending,
-    Failure,
+  struct TransmitResult : TransmitStatus {
+    enum class Status {
+      Success,
+      SuccessWithPending,
+      Failure,
+    };
+    static constexpr Status Success = Status::Success;
+    static constexpr Status SuccessWithPending = Status::SuccessWithPending;
+    static constexpr Status Failure = Status::Failure;
+
+    Status status = Status::Failure;
+
+    constexpr TransmitResult() = default;
+    constexpr TransmitResult(Status status) : TransmitStatus(), status(status) {}
+    constexpr TransmitResult(Status status, const TransmitStatus &tx_status)
+        : TransmitStatus(tx_status), status(status) {}
+
+    constexpr operator Status() const { return status; }
+    constexpr explicit operator bool() const {
+      return status == Status::Success || status == Status::SuccessWithPending;
+    }
   };
 
   /**
@@ -188,17 +229,36 @@ public:
    * Automatically serialized to IEEE 802.15.4 little-endian wire order.
    * @param payload the payload to send.
    * @param payload_size the payload size. Maximum payload size 104 bytes.
-   * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure.
+   * @param retries how many times to try resending on failure (no ACK, busy CCA, etc.). Defaults to 30.
+   * @return TransmitResult indicating Success, SuccessWithPending (receiver has queued data for this node), or Failure,
+   * along with attempts, errors, last_error, ack_rssi, and ack_lqi.
    */
-  TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size);
+  TransmitResult transmit(uint64_t destination_mac, const uint8_t *payload, uint8_t payload_size, uint8_t retries = 30);
 
   /**
-   * Result of a dataRequest() poll operation.
+   * Result of a dataRequest() poll operation, including transmit status and ACK RSSI/LQI.
    */
-  enum class DataRequestResult {
-    NoDataAvailable,
-    DataAvailable,
-    Failure,
+  struct DataRequestResult : TransmitStatus {
+    enum class Status {
+      NoDataAvailable,
+      DataAvailable,
+      Failure,
+    };
+    static constexpr Status NoDataAvailable = Status::NoDataAvailable;
+    static constexpr Status DataAvailable = Status::DataAvailable;
+    static constexpr Status Failure = Status::Failure;
+
+    Status status = Status::Failure;
+
+    constexpr DataRequestResult() = default;
+    constexpr DataRequestResult(Status status) : TransmitStatus(), status(status) {}
+    constexpr DataRequestResult(Status status, const TransmitStatus &tx_status)
+        : TransmitStatus(tx_status), status(status) {}
+
+    constexpr operator Status() const { return status; }
+    constexpr explicit operator bool() const {
+      return status == Status::NoDataAvailable || status == Status::DataAvailable;
+    }
   };
 
   /**
@@ -217,10 +277,11 @@ public:
    *   saving a redundant round-trip.
    *
    * @param destination_mac Destination address in canonical 64-bit integer format (e.g. 0xe4b323fffe926d10ULL).
+   * @param retries how many times to try resending on failure (no ACK, busy CCA, etc.). Defaults to 30.
    * @return DataRequestResult indicating whether data is available, no data is available, or failure (e.g. no
-   * ACK/timeout).
+   * ACK/timeout), along with attempts, errors, last_error, ack_rssi, and ack_lqi.
    */
-  DataRequestResult dataRequest(uint64_t destination_mac);
+  DataRequestResult dataRequest(uint64_t destination_mac, uint8_t retries = 30);
 
   /**
    * Start receiving and set callback for received messages. If callback already set in constructor, no need to call
@@ -274,7 +335,10 @@ private:
     SuccessWithPending,
   };
 
-  InternalTransmitResult transmitInternal(uint8_t *frame, bool cca);
+  InternalTransmitResult transmitInternal(uint8_t *frame, bool cca,
+                                          Ieee802154Internal::TxResult *out_tx_result = nullptr);
+  InternalTransmitResult transmitWithRetries(uint8_t *frame, bool cca, uint8_t max_retries,
+                                             TransmitStatus *out_status = nullptr);
 
 private: // static helpers
   static uint64_t macToMacLE(const uint8_t *mac_addr);

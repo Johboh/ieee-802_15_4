@@ -70,7 +70,9 @@ struct ReceivedFrame {
 
 struct TxResult {
   bool pending = false;
-  esp_ieee802154_tx_error_t error;
+  esp_ieee802154_tx_error_t error = ESP_IEEE802154_TX_ERR_NONE;
+  int8_t ack_rssi = 0;
+  uint8_t ack_lqi = 0;
 };
 
 }; // namespace Ieee802154Internal

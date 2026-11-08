@@ -31,26 +31,29 @@ void loop() {
     auto result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
     switch (result) {
     case Ieee802154::TransmitResult::Success:
-      Serial.println("Transmit OK");
+      Serial.println("Transmit OK (attempts: " + String(result.attempts) + ", ACK RSSI: " + String(result.ack_rssi) +
+                     ", LQI: " + String(result.ack_lqi) + ")");
       break;
     case Ieee802154::TransmitResult::SuccessWithPending:
-      Serial.println("Transmit OK (pending data waiting on host)");
+      Serial.println("Transmit OK with pending data (attempts: " + String(result.attempts) + ")");
       break;
     case Ieee802154::TransmitResult::Failure:
-      Serial.println("Transmit error");
+      Serial.println("Transmit error (attempts: " + String(result.attempts) + ", errors: " + String(result.errors) +
+                     ", last_error: " + String(result.last_error) + ")");
       break;
     }
   } else {
     auto result = _ieee802154.dataRequest(destination_address);
     switch (result) {
     case Ieee802154::DataRequestResult::NoDataAvailable:
-      Serial.println("Data Request: No data available");
+      Serial.println("Data Request: No data available (attempts: " + String(result.attempts) + ")");
       break;
     case Ieee802154::DataRequestResult::DataAvailable:
-      Serial.println("Data Request: Data available");
+      Serial.println("Data Request: Data available (attempts: " + String(result.attempts) + ")");
       break;
     case Ieee802154::DataRequestResult::Failure:
-      Serial.println("Data Request: Failure");
+      Serial.println("Data Request: Failure (attempts: " + String(result.attempts) +
+                     ", errors: " + String(result.errors) + ", last_error: " + String(result.last_error) + ")");
       break;
     default:
       Serial.println("Data Request: Unknown outcome");

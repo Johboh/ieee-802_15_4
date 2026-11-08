@@ -32,26 +32,30 @@ void transmitTask(void *pvParameters) {
       auto result = _ieee802154.transmit(destination_address, (uint8_t *)&message, sizeof(ApplicationMessage));
       switch (result) {
       case Ieee802154::TransmitResult::Success:
-        ESP_LOGI(LOG_TAG, "Transmit OK");
+        ESP_LOGI(LOG_TAG, "Transmit OK (attempts: %u, ACK RSSI: %d, LQI: %u)", result.attempts, result.ack_rssi,
+                 result.ack_lqi);
         break;
       case Ieee802154::TransmitResult::SuccessWithPending:
-        ESP_LOGI(LOG_TAG, "Transmit OK (pending data waiting on host)");
+        ESP_LOGI(LOG_TAG, "Transmit OK with pending data (attempts: %u, ACK RSSI: %d, LQI: %u)", result.attempts,
+                 result.ack_rssi, result.ack_lqi);
         break;
       case Ieee802154::TransmitResult::Failure:
-        ESP_LOGE(LOG_TAG, "Transmit error");
+        ESP_LOGE(LOG_TAG, "Transmit error (attempts: %u, errors: %u, last_error: %d)", result.attempts, result.errors,
+                 result.last_error);
         break;
       }
     } else {
       auto result = _ieee802154.dataRequest(destination_address);
       switch (result) {
       case Ieee802154::DataRequestResult::NoDataAvailable:
-        ESP_LOGI(LOG_TAG, "Data Request: No data available");
+        ESP_LOGI(LOG_TAG, "Data Request: No data available (attempts: %u)", result.attempts);
         break;
       case Ieee802154::DataRequestResult::DataAvailable:
-        ESP_LOGI(LOG_TAG, "Data Request: Data available");
+        ESP_LOGI(LOG_TAG, "Data Request: Data available (attempts: %u)", result.attempts);
         break;
       case Ieee802154::DataRequestResult::Failure:
-        ESP_LOGE(LOG_TAG, "Data Request: Failure");
+        ESP_LOGE(LOG_TAG, "Data Request: Failure (attempts: %u, errors: %u, last_error: %d)", result.attempts,
+                 result.errors, result.last_error);
         break;
       default:
         ESP_LOGE(LOG_TAG, "Data Request: Unknown outcome");

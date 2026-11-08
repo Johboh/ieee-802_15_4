@@ -16,6 +16,7 @@ Ieee802154 _ieee802154({.channel = 15, .pan_id = 0x9191}, [](Ieee802154::Message
   Serial.println(buffer);
   sprintf(buffer, "destination MAC: 0x%llx", message.destination_address);
   Serial.println(buffer);
+  Serial.println(" -- RSSI: " + String(message.rssi) + ", LQI: " + String(message.lqi));
   Serial.println(" -- payload size: " + String(message.payload_size));
   if (message.payload_size >= sizeof(ApplicationMessage)) {
     ApplicationMessage *app = reinterpret_cast<ApplicationMessage *>(message.payload);
