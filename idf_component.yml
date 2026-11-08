@@ -1,4 +1,4 @@
-version: "1.0.5"
+version: "1.0.6"
 description: Simplified version of sending and receiving messages over 802.15.4
 url: https://github.com/Johboh/ieee-802_15_4
 license: "GPL-2.0-or-later OR GPL-3.0-or-later"
