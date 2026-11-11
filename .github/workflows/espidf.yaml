@@ -6,7 +6,8 @@ on:
       target_path:
         type: string
         description: 'Path value to select a specific target in the matrix'
-        required: true
+        required: false
+        default: ''
   push:
 
 jobs:
@@ -38,12 +39,11 @@ jobs:
           - name: examples/espidf/energy_detect
 
     steps:
-      - if: github.event_name == 'workflow_call' && matrix.path.name != inputs.target_path
-        run: exit 0
-
       - uses: actions/checkout@v4.1.1
+        if: ${{ !inputs.target_path || startsWith(matrix.path.name, inputs.target_path) }}
 
       - name: ESP-IDF Build
+        if: ${{ !inputs.target_path || startsWith(matrix.path.name, inputs.target_path) }}
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ matrix.version.version_number }}

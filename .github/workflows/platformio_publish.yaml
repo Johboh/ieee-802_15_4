@@ -8,7 +8,7 @@ jobs:
   build_examples_for_verification:
     uses: ./.github/workflows/platformio.yaml
     with:
-      target_path: "examples/espidf/host/main/main.cpp"
+      target_path: "examples/espidf"
 
   upload_library:
     runs-on: ubuntu-latest

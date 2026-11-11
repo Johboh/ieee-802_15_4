@@ -6,7 +6,8 @@ on:
       target_path:
         type: string
         description: 'Path value to select a specific target in the matrix'
-        required: true
+        required: false
+        default: ''
   push:
 
 jobs:
@@ -22,12 +23,11 @@ jobs:
           - path: examples/espidf/energy_detect/main/main.cpp
 
     steps:
-      - if: github.event_name == 'workflow_call' && matrix.target.path != inputs.target_path
-        run: exit 0
-
       - uses: actions/checkout@v4.1.1
+        if: ${{ !inputs.target_path || matrix.target.path == inputs.target_path || startsWith(matrix.target.path, inputs.target_path) }}
 
       - uses: actions/cache@v3
+        if: ${{ !inputs.target_path || matrix.target.path == inputs.target_path || startsWith(matrix.target.path, inputs.target_path) }}
         with:
           path: |
             ~/.cache/pip
@@ -35,13 +35,16 @@ jobs:
           key: ${{ runner.os }}-pio
 
       - uses: actions/setup-python@v4
+        if: ${{ !inputs.target_path || matrix.target.path == inputs.target_path || startsWith(matrix.target.path, inputs.target_path) }}
         with:
           python-version: '3.12'
 
       - name: Install PlatformIO Core
+        if: ${{ !inputs.target_path || matrix.target.path == inputs.target_path || startsWith(matrix.target.path, inputs.target_path) }}
         run: pip install --upgrade platformio
 
       - name: Build PlatformIO targets
+        if: ${{ !inputs.target_path || matrix.target.path == inputs.target_path || startsWith(matrix.target.path, inputs.target_path) }}
         run: ${{ env.PLATFORMIO_CI_BASE_CMD }}
         env:
           PLATFORMIO_CI_BASE_CMD: pio ci --lib="." --board=esp32-c6-devkitc-1 --project-option="build_unflags=-std=gnu++11" --project-option="build_flags=-std=gnu++17" --project-option="platform=espressif32@6.10.0" --project-option="lib_ldf_mode=deep" --project-option="framework=espidf"

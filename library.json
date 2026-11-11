@@ -29,6 +29,16 @@
       "name": "ESP-IDF node",
       "base": "examples/espidf/node/main",
       "files": ["main.cpp"]
+    },
+    {
+      "name": "ESP-IDF promiscuous",
+      "base": "examples/espidf/promiscuous/main",
+      "files": ["main.cpp"]
+    },
+    {
+      "name": "ESP-IDF energy detect",
+      "base": "examples/espidf/energy_detect/main",
+      "files": ["main.cpp"]
     }
   ],
   "dependencies": []
