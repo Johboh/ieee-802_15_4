@@ -18,6 +18,8 @@ jobs:
         target:
           - path: examples/espidf/host/main/main.cpp
           - path: examples/espidf/node/main/main.cpp
+          - path: examples/espidf/promiscuous/main/main.cpp
+          - path: examples/espidf/energy_detect/main/main.cpp
 
     steps:
       - if: github.event_name == 'workflow_call' && matrix.target.path != inputs.target_path

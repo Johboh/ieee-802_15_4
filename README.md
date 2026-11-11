@@ -26,8 +26,12 @@ dependencies:
 ### Examples
 - [Using Arduino IDE/CLI, host](examples/arduino/host/host.ino)
 - [Using Arduino IDE/CLI, node](examples/arduino/node/node.ino)
+- [Using Arduino IDE/CLI, promiscuous](examples/arduino/promiscuous/promiscuous.ino)
+- [Using Arduino IDE/CLI, energy detect](examples/arduino/energy_detect/energy_detect.ino)
 - [Using ESP-IDF framework/Platform IO, host](examples/espidf/host/main/main.cpp)
 - [Using ESP-IDF framework/Platform IO, node](examples/espidf/node/main/main.cpp)
+- [Using ESP-IDF framework/Platform IO, promiscuous](examples/espidf/promiscuous/main/main.cpp)
+- [Using ESP-IDF framework/Platform IO, energy detect](examples/espidf/energy_detect/main/main.cpp)
 
 ### Compatibility
 - As of now, ESP32-C6 and ESP32-H2 are the only ones supporting 802.15.4, but might be more in the future.
