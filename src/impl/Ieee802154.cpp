@@ -18,6 +18,7 @@ using namespace Ieee802154Internal;
 
 static QueueHandle_t __ieee802154_receive_queue = nullptr;
 static QueueHandle_t __ieee802154_transmit_queue = nullptr;
+static QueueHandle_t __ieee802154_ed_queue = nullptr;
 
 #ifndef IEEE802154_USE_CALLBACKS
 void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
@@ -32,6 +33,8 @@ void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *fr
 void esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error) {
   Ieee802154::ieee802154_transmit_failed_cb(frame, error);
 }
+
+void esp_ieee802154_energy_detect_done(int8_t power) { Ieee802154::ieee802154_energy_detect_done_cb(power); }
 #endif
 
 void IRAM_ATTR Ieee802154::ieee802154_receive_done_cb(uint8_t *raw_frame, esp_ieee802154_frame_info_t *frame_info) {
@@ -102,7 +105,15 @@ void IRAM_ATTR Ieee802154::ieee802154_transmit_failed_cb(const uint8_t *frame, e
 
 void IRAM_ATTR Ieee802154::ieee802154_transmit_sfd_done_cb(uint8_t *frame) {}
 
-void IRAM_ATTR Ieee802154::ieee802154_energy_detect_done_cb(int8_t power) {}
+void IRAM_ATTR Ieee802154::ieee802154_energy_detect_done_cb(int8_t power) {
+  if (__ieee802154_ed_queue != nullptr) {
+    auto xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(__ieee802154_ed_queue, &power, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
+  }
+}
 
 esp_err_t IRAM_ATTR Ieee802154::ieee802154_enh_ack_generator_cb(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
                                                                 uint8_t *enhack_frame) {
@@ -137,6 +148,40 @@ void Ieee802154::cbTask(void *pvParameters) {
       if (!_this->_running.load(std::memory_order_acquire)) {
         break;
       }
+
+      if (received_message.frame_info.process) {
+        OnPromiscuousFrame on_prom_cb;
+        {
+          std::lock_guard<std::mutex> lock(_this->_rx_mutex);
+          on_prom_cb = _this->_on_promiscuous_frame;
+        }
+        if (on_prom_cb) {
+          PromiscuousFrame pframe{};
+          pframe.channel = received_message.frame_info.channel;
+          pframe.rssi = received_message.frame_info.rssi;
+          pframe.lqi = received_message.frame_info.lqi;
+          pframe.frame_type = received_message.fcf.frame_type;
+          pframe.sequence_number = received_message.sequence_number;
+          pframe.dst_pan = received_message.dst_pan;
+          pframe.src_pan = received_message.with_src_pan ? received_message.src_pan : received_message.dst_pan;
+          pframe.dest_addr_mode = received_message.fcf.dest_addr_mode;
+          pframe.src_addr_mode = received_message.fcf.src_addr_mode;
+          if (received_message.fcf.dest_addr_mode == 0x2) {
+            pframe.dst_addr = Ieee802154::macToShort(received_message.dst_addr);
+          } else if (received_message.fcf.dest_addr_mode == 0x3) {
+            pframe.dst_addr = Ieee802154::macToMacLE(received_message.dst_addr);
+          }
+          if (received_message.fcf.src_addr_mode == 0x2) {
+            pframe.src_addr = Ieee802154::macToShort(received_message.src_addr);
+          } else if (received_message.fcf.src_addr_mode == 0x3) {
+            pframe.src_addr = Ieee802154::macToMacLE(received_message.src_addr);
+          }
+          pframe.payload_size = std::min(received_message.data_length, (uint8_t)sizeof(pframe.payload));
+          memcpy(pframe.payload, received_message.data, pframe.payload_size);
+          on_prom_cb(pframe);
+        }
+      }
+
       // Accept frames for us specifically, or broadcast (16-bit short or 64-bit extended).
       // This is also done in hardware, but this is future preparation for promiscuous mode.
       auto destination_address = Ieee802154::macToMacLE(received_message.dst_addr);
@@ -271,6 +316,12 @@ bool Ieee802154::initialize(bool initialize_nvs) {
     xQueueReset(__ieee802154_transmit_queue);
   }
 
+  if (__ieee802154_ed_queue == nullptr) {
+    __ieee802154_ed_queue = xQueueCreate(4, sizeof(int8_t));
+  } else {
+    xQueueReset(__ieee802154_ed_queue);
+  }
+
 #ifdef IEEE802154_USE_CALLBACKS
   ESP_ERROR_CHECK(esp_ieee802154_event_callback_list_register({
       .rx_done_cb = ieee802154_receive_done_cb,
@@ -296,11 +347,10 @@ bool Ieee802154::initialize(bool initialize_nvs) {
   ESP_ERROR_CHECK(esp_ieee802154_set_txpower(_configuration.tx_power));
 
   ESP_ERROR_CHECK(esp_ieee802154_set_extended_address(_device_mac_le));
-  // TODO(johboh): Potentially support these promiscuous and coordinator.
-  ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(false));
+  ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(_configuration.promiscuous_mode));
   ESP_ERROR_CHECK(esp_ieee802154_set_coordinator(false));
 
-  if (_on_message || _on_data_request) {
+  if (_on_message || _on_data_request || _on_promiscuous_frame || _configuration.promiscuous_mode) {
     ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
   }
@@ -327,6 +377,9 @@ bool Ieee802154::initialize(bool initialize_nvs) {
     }
     if (__ieee802154_transmit_queue != nullptr) {
       xQueueReset(__ieee802154_transmit_queue);
+    }
+    if (__ieee802154_ed_queue != nullptr) {
+      xQueueReset(__ieee802154_ed_queue);
     }
     return false;
   }
@@ -380,6 +433,9 @@ void Ieee802154::teardown() {
   }
   if (__ieee802154_transmit_queue != nullptr) {
     xQueueReset(__ieee802154_transmit_queue);
+  }
+  if (__ieee802154_ed_queue != nullptr) {
+    xQueueReset(__ieee802154_ed_queue);
   }
   _last_processed_sequence_number.clear();
 }
@@ -563,6 +619,9 @@ Ieee802154::InternalTransmitResult Ieee802154::transmitInternal(uint8_t *frame, 
   if (__ieee802154_transmit_queue != nullptr) {
     xQueueReset(__ieee802154_transmit_queue);
   }
+  if (__ieee802154_ed_queue != nullptr) {
+    xQueueReset(__ieee802154_ed_queue);
+  }
   ESP_ERROR_CHECK(esp_ieee802154_transmit(frame, cca));
 
   TxResult transmit_result;
@@ -662,11 +721,60 @@ void Ieee802154::setChannel(uint8_t channel) {
     // esp_ieee802154_set_channel() only updates the cached PIB state and sets a pending flag;
     // it does not write the new frequency to hardware until rx_init() or tx_init() runs.
     // If receiving is active, call esp_ieee802154_receive() so the channel switch is applied immediately.
-    if (_on_message != nullptr || _on_data_request != nullptr ||
-        esp_ieee802154_get_state() == ESP_IEEE802154_RADIO_RECEIVE) {
+    if (_on_message != nullptr || _on_data_request != nullptr || _on_promiscuous_frame != nullptr ||
+        _configuration.promiscuous_mode || esp_ieee802154_get_state() == ESP_IEEE802154_RADIO_RECEIVE) {
       ESP_ERROR_CHECK(esp_ieee802154_receive());
     }
   }
+}
+
+void Ieee802154::setPromiscuous(bool enable) {
+  std::lock_guard<std::mutex> lock(_rx_mutex);
+  _configuration.promiscuous_mode = enable;
+  if (_initialized.load(std::memory_order_acquire)) {
+    ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(enable));
+    if (enable) {
+      ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
+      ESP_ERROR_CHECK(esp_ieee802154_receive());
+    }
+  }
+}
+
+bool Ieee802154::isPromiscuous() const { return _configuration.promiscuous_mode; }
+
+void Ieee802154::receivePromiscuous(OnPromiscuousFrame on_promiscuous_frame) {
+  std::lock_guard<std::mutex> lock(_rx_mutex);
+  _on_promiscuous_frame = on_promiscuous_frame;
+  if (on_promiscuous_frame != nullptr) {
+    _configuration.promiscuous_mode = true;
+    if (_initialized.load(std::memory_order_acquire)) {
+      ESP_ERROR_CHECK(esp_ieee802154_set_promiscuous(true));
+      ESP_ERROR_CHECK(esp_ieee802154_set_rx_when_idle(true));
+      ESP_ERROR_CHECK(esp_ieee802154_receive());
+    }
+  }
+}
+
+bool Ieee802154::energyDetect(int8_t &power, uint32_t duration_symbols, uint32_t timeout_ms) {
+  std::lock_guard<std::mutex> lock(_send_mutex);
+  if (!_initialized.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (__ieee802154_ed_queue != nullptr) {
+    xQueueReset(__ieee802154_ed_queue);
+  }
+  esp_err_t err = esp_ieee802154_energy_detect(duration_symbols);
+  if (err != ESP_OK) {
+    ESP_LOGE(Ieee802154Log::TAG, "esp_ieee802154_energy_detect failed: %s", esp_err_to_name(err));
+    return false;
+  }
+  int8_t detected = 0;
+  if (__ieee802154_ed_queue != nullptr &&
+      xQueueReceive(__ieee802154_ed_queue, &detected, pdMS_TO_TICKS(timeout_ms)) == pdPASS) {
+    power = detected;
+    return true;
+  }
+  return false;
 }
 
 uint8_t Ieee802154::nextSequenceNumber() const {

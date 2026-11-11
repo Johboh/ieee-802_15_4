@@ -71,6 +71,24 @@ public:
 
   typedef std::function<void(Ieee802154::DataRequest request)> OnDataRequest;
 
+  struct PromiscuousFrame {
+    uint8_t channel = 0;
+    int8_t rssi = 0;
+    uint8_t lqi = 0;
+    uint8_t frame_type = 0; // 0=Beacon, 1=Data, 2=Ack, 3=Command
+    uint8_t sequence_number = 0;
+    uint16_t dst_pan = 0;
+    uint16_t src_pan = 0;
+    uint8_t dest_addr_mode = 0; // 0=none, 2=16-bit, 3=64-bit
+    uint8_t src_addr_mode = 0;  // 0=none, 2=16-bit, 3=64-bit
+    uint64_t dst_addr = 0;
+    uint64_t src_addr = 0;
+    uint8_t payload[127] = {0};
+    uint8_t payload_size = 0;
+  };
+
+  typedef std::function<void(const PromiscuousFrame &frame)> OnPromiscuousFrame;
+
   struct Configuration {
     /**
      * 802.15.4 channel to use. Value between 11 and 26, and its recommended to pick a channel that is in between the
@@ -93,6 +111,10 @@ public:
      * Supported range: -20 to +20 dBm (ESP32-C6) / -24 to +20 dBm (ESP32-H2).
      */
     int8_t tx_power = 20;
+    /**
+     * @brief Enable promiscuous reception (receive all valid 802.15.4 frames, no auto-ACK).
+     */
+    bool promiscuous_mode = false;
   };
 
   /**
@@ -290,6 +312,29 @@ public:
   void receive(OnMessage on_message);
 
   /**
+   * @brief Enable or disable promiscuous mode. When enabled, all valid 802.15.4 frames are received,
+   * regardless of destination PAN or MAC address, and hardware auto-ACK is disabled.
+   */
+  void setPromiscuous(bool enable);
+  bool isPromiscuous() const;
+
+  /**
+   * @brief Register callback for frames received in promiscuous mode. Automatically enables promiscuous mode.
+   * Call with empty callback to clear.
+   */
+  void receivePromiscuous(OnPromiscuousFrame on_promiscuous_frame);
+
+  /**
+   * @brief Perform an energy detection (ED) measurement on the current channel.
+   *
+   * @param power Output parameter receiving the measured RF power in dBm.
+   * @param duration_symbols Duration in symbol periods (1 symbol = 16 us). Standard is 8 symbols (128 us).
+   * @param timeout_ms Max time in ms to wait for the measurement. Default is 50 ms.
+   * @return true if measurement succeeded, false on error or timeout.
+   */
+  bool energyDetect(int8_t &power, uint32_t duration_symbols = 8, uint32_t timeout_ms = 50);
+
+  /**
    * @brief Let transmitter know that there is pending data when transmitter sends a data request.
    * Must be in a receiving mode for this to work.
    *
@@ -371,6 +416,7 @@ public:
 
 private:
   OnMessage _on_message;
+  OnPromiscuousFrame _on_promiscuous_frame;
   mutable std::mutex _send_mutex;
   mutable std::mutex _rx_mutex;
   std::atomic<bool> _initialized{false};
